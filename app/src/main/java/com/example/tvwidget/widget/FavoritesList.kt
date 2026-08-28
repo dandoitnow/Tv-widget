@@ -96,7 +96,7 @@ private fun ShowRow(show: FavoriteShow, expanded: Boolean, logOpen: Boolean, pos
             Spacer(GlanceModifier.width(8.dp))
             Text(
                 text = show.title,
-                style = Tokens.display(Dimens.titleSize() + 1f),
+                style = Tokens.display(Dimens.TitleSize + 1f),
                 maxLines = 1,
                 modifier = GlanceModifier.defaultWeight(),
             )

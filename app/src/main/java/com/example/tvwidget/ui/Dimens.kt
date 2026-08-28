@@ -67,13 +67,13 @@ object Dimens {
         Tier.XL -> 22f
     }
 
-    /** A row's show/episode title — the most prominent text in the row. */
-    @Composable
-    fun titleSize(): Float = when (tier()) {
-        Tier.COMPACT -> 22f
-        Tier.ROOMY -> 28f
-        Tier.XL -> 34f
-    }
+    /**
+     * A row's show/episode title. Deliberately fixed, not tier-scaled: it's a `maxLines = 1` field
+     * next to a poster and a status column that don't shrink to make room, so letting it keep
+     * growing at ROOMY/XL — as an earlier version of this file did — pushed titles past what the
+     * row could actually fit.
+     */
+    const val TitleSize = 19f
 
     /** Meta lines: day/time/network, rank + kind, status labels underneath a title. */
     @Composable

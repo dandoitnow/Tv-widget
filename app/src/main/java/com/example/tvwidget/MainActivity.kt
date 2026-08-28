@@ -118,6 +118,11 @@ class MainActivity : Activity() {
         }
         root.addView(list)
 
+        // Tracked shows are the default listing — search results cover them once the user types,
+        // and clearing the field brings them back. Same list either way, so untracking a show found
+        // by typing is still reachable from here without leaving the screen.
+        showTrackedList(status)
+
         var searchToken = 0
         val debounceHandler = android.os.Handler(mainLooper)
         var pendingSearch: Runnable? = null
@@ -132,8 +137,7 @@ class MainActivity : Activity() {
                 // fast typist never triggers one network request per character.
                 pendingSearch?.let(debounceHandler::removeCallbacks)
                 if (query.length < 2) {
-                    resultsAdapter.submit(emptyList())
-                    status.text = ""
+                    showTrackedList(status)
                     return
                 }
                 status.text = "Searching…"
@@ -144,6 +148,7 @@ class MainActivity : Activity() {
                             .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
                         runOnUiThread {
                             if (token != searchToken) return@runOnUiThread // a newer keystroke superseded this one
+                            resultsAdapter.showingTrackedList = false
                             resultsAdapter.submit(results)
                             status.text = if (results.isEmpty()) "No shows found." else "${results.size} result(s)."
                         }
@@ -157,11 +162,37 @@ class MainActivity : Activity() {
         return root
     }
 
+    /** Populates the results list with everything currently tracked. */
+    private fun showTrackedList(status: TextView) {
+        val tracked = TrackedShowsRepository.list(this).map { show ->
+            CatalogueShow(
+                tvMazeId = show.tvMazeId,
+                title = show.title,
+                network = show.network,
+                status = "TRACKING",
+                posterUrl = show.posterUrl,
+                tracked = true,
+            )
+        }
+        resultsAdapter.showingTrackedList = true
+        resultsAdapter.submit(tracked)
+        status.text = if (tracked.isEmpty()) "No shows tracked yet." else "${tracked.size} tracked."
+    }
+
     // -- CATALOGUE search results --------------------------------------------------------------
 
     private inner class ResultsAdapter : BaseAdapter() {
         private var items: List<CatalogueShow> = emptyList()
         private val posterCache = HashMap<Int, Bitmap?>()
+
+        /**
+         * True while showing "everything tracked" rather than search results — set by whichever of
+         * [showTrackedList]/the search callback last called [submit]. Untracking a show while this
+         * list is up removes the row entirely, since it no longer belongs in "everything tracked";
+         * untracking from search results just flips the row's button instead, since the show is
+         * still a valid search hit.
+         */
+        var showingTrackedList = false
 
         fun submit(newItems: List<CatalogueShow>) {
             items = newItems
@@ -238,7 +269,13 @@ class MainActivity : Activity() {
             } else {
                 TrackedShowsRepository.remove(this@MainActivity, show.tvMazeId)
             }
-            items = items.map { if (it.tvMazeId == show.tvMazeId) it.copy(tracked = nowTracked) else it }
+            items = if (showingTrackedList && !nowTracked) {
+                // This view is specifically "everything tracked" — an untracked show doesn't belong
+                // in it anymore, rather than lingering with a stale "+ TRACK" button.
+                items.filterNot { it.tvMazeId == show.tvMazeId }
+            } else {
+                items.map { if (it.tvMazeId == show.tvMazeId) it.copy(tracked = nowTracked) else it }
+            }
             notifyDataSetChanged()
             button.text = if (nowTracked) "− UNTRACK" else "+ TRACK"
             AnticipatedSyncWorker.runOnce(this@MainActivity)
