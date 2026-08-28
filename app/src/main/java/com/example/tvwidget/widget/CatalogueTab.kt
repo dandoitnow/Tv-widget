@@ -24,15 +24,20 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import com.example.tvwidget.MainActivity
 import com.example.tvwidget.data.CatalogueShow
+import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Tokens
 
 /**
- * The CATALOGUE tab: browse TVMaze's shows and add any of them to tracking, which starts feeding
- * their episodes into TODAY.
+ * The CATALOGUE tab: browse TVMaze's shows and track/untrack any of them, which starts (or stops)
+ * feeding their episodes into TODAY.
  *
  * Widgets can't host a text field (`RemoteViews` has no `EditText`), so free-text search happens in
  * `MainActivity` instead — the pill at the top deep-links there. What's browsable directly in the
- * widget, no typing required, is today's currently-airing shows with a one-tap add/remove.
+ * widget, no typing required, is today's currently-airing shows with a one-tap track/untrack.
+ *
+ * Tracked shows are always pinned in their own section at the top (see
+ * `AnticipatedSyncWorker.mergeTracked`) — otherwise a show that isn't airing today would scroll out
+ * of the browse list with no way back to untrack it.
  */
 @Composable
 fun CatalogueTab(shows: List<CatalogueShow>, posters: Map<String, Bitmap>) {
@@ -41,11 +46,33 @@ fun CatalogueTab(shows: List<CatalogueShow>, posters: Map<String, Bitmap>) {
         if (shows.isEmpty()) {
             EmptyState()
         } else {
+            val tracked = shows.filter { it.tracked }
+            val browsable = shows.filterNot { it.tracked }
             LazyColumn(modifier = GlanceModifier.fillMaxWidth()) {
-                items(shows.size) { index -> CatalogueRow(show = shows[index], posters = posters) }
+                if (tracked.isNotEmpty()) {
+                    item { SectionHeader("TRACKING (${tracked.size})") }
+                    items(tracked.size) { index -> CatalogueRow(show = tracked[index], posters = posters) }
+                }
+                if (browsable.isNotEmpty()) {
+                    item { SectionHeader("BROWSE") }
+                    items(browsable.size) { index -> CatalogueRow(show = browsable[index], posters = posters) }
+                }
                 item { Spacer(GlanceModifier.fillMaxWidth().height(Tokens.ListRowHeight)) }
             }
         }
+    }
+}
+
+@Composable
+private fun SectionHeader(label: String) {
+    Row(
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .height(18.dp)
+            .padding(horizontal = Tokens.RowPaddingHorizontal),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = label, style = Tokens.mono6(Tokens.white(0.4f)))
     }
 }
 
@@ -70,13 +97,25 @@ private fun SearchRow() {
     }
 }
 
+/**
+ * Shown before the first successful sync, and again if every sync since has failed (a failed sync
+ * never overwrites a previously-good list — see `AnticipatedSyncWorker.doWork` — so this state only
+ * ever means "no catalogue data has loaded yet"). Tapping forces another attempt immediately rather
+ * than waiting for the next automatic retry.
+ */
 @Composable
 private fun EmptyState() {
-    Box(
-        modifier = GlanceModifier.fillMaxWidth().height(Tokens.ListRowHeight),
-        contentAlignment = Alignment.Center,
+    Column(
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .height(Tokens.ListRowHeight * 2)
+            .clickable(actionRunCallback<RetryCatalogueSyncAction>()),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text = "LOADING CATALOGUE…", style = Tokens.mono65(Tokens.white(0.35f)))
+        Text(text = "COULDN'T LOAD THE CATALOGUE", style = Tokens.mono65(Tokens.white(0.4f)))
+        Spacer(GlanceModifier.height(4.dp))
+        Text(text = "TAP TO RETRY", style = Tokens.mono65(Tokens.Accent))
     }
 }
 
@@ -86,7 +125,7 @@ private fun CatalogueRow(show: CatalogueShow, posters: Map<String, Bitmap>) {
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .height(Tokens.ListRowHeight - 1.dp)
+                .height(Dimens.listRowHeight() - 1.dp)
                 .padding(horizontal = Tokens.RowPaddingHorizontal),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -107,6 +146,12 @@ private fun CatalogueRow(show: CatalogueShow, posters: Map<String, Bitmap>) {
     }
 }
 
+/**
+ * One button does both jobs — tapping an untracked show adds it, tapping a tracked one removes it —
+ * so the label always states the action a tap performs, not the current status: "TRACK" invites
+ * adding, "UNTRACK" invites removing. A same-looking-but-ambiguous "✓ TRACKING" label would leave it
+ * unclear that tapping again does anything.
+ */
 @Composable
 private fun TrackToggle(show: CatalogueShow) {
     val background = if (show.tracked) Tokens.accent(0.18f) else Tokens.white(0.08f)
@@ -130,7 +175,7 @@ private fun TrackToggle(show: CatalogueShow) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = if (show.tracked) "✓ TRACKING" else "+ TRACK",
+            text = if (show.tracked) "− UNTRACK" else "+ TRACK",
             style = Tokens.mono6(foreground, TextAlign.Center),
         )
     }

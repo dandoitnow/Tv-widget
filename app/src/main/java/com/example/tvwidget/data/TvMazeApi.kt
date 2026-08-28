@@ -64,12 +64,28 @@ object TvMazeApi {
         shows.values.take(limit)
     }
 
-    /** Poster lookup for shows we only know by title (the bundled demo content). */
+    /**
+     * Poster lookup for shows we only know by title (the bundled demo content) — `singlesearch`
+     * returns TVMaze's best guess even when nothing actually matches, so a loose or generic title
+     * ("Silo", "Wednesday") can come back with an unrelated show's art. To avoid caching the wrong
+     * poster, the candidate's own name is checked against [title] (case/punctuation-insensitive)
+     * before its image is accepted; anything that doesn't match closely enough returns `null`
+     * rather than a confident-looking wrong answer.
+     */
     suspend fun posterFor(title: String): String? = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(title, "UTF-8")
         val body = get("$BASE/singlesearch/shows?q=$encoded") ?: return@withContext null
-        runCatching { JSONObject(body).optJSONObject("image")?.optString("medium") }.getOrNull()
+        val json = runCatching { JSONObject(body) }.getOrNull() ?: return@withContext null
+        val candidateName = json.optString("name")
+        if (!namesMatch(title, candidateName)) return@withContext null
+        json.optJSONObject("image")?.optString("medium")?.takeIf { it.isNotBlank() }
     }
+
+    /** Loose equality: case, punctuation, and whitespace differences don't count as a mismatch. */
+    private fun namesMatch(a: String, b: String): Boolean = normalize(a) == normalize(b)
+
+    private fun normalize(value: String): String =
+        value.lowercase(java.util.Locale.US).replace(Regex("[^a-z0-9]"), "")
 
     /** Previous/next aired episode for one show, used to build TODAY rows for tracked shows. */
     suspend fun schedule(tvMazeId: Int): ShowSchedule = withContext(Dispatchers.IO) {

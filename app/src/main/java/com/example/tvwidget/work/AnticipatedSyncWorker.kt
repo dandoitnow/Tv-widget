@@ -1,6 +1,7 @@
 package com.example.tvwidget.work
 
 import android.content.Context
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -49,14 +50,17 @@ class AnticipatedSyncWorker(
         val anticipated = runCatching { source.fetch() }.getOrElse { SampleData.anticipated() }
         val tracked = TrackedShowsRepository.list(applicationContext)
         val trackedReleases = buildTrackedReleases(tracked)
-        val catalogue = runCatching { TvMazeApi.browse() }.getOrElse { emptyList() }
-            .map { show -> show.copy(tracked = tracked.any { it.tvMazeId == show.tvMazeId }) }
 
-        cachePosters(anticipated.map { it.title }, tracked, catalogue)
+        // A failed browse() must not blank out whatever CATALOGUE was already showing — on failure
+        // the CATALOGUE key below is simply left untouched, so a transient network error never wipes
+        // an otherwise-populated tab.
+        val browseResult = runCatching { TvMazeApi.browse() }
+        val catalogue = browseResult.getOrNull()?.let { browsed -> mergeTracked(browsed, tracked) }
+
+        cachePosters(anticipated.map { it.title }, tracked, catalogue.orEmpty())
 
         val encodedAnticipated = WidgetState.encodeAnticipated(anticipated)
         val encodedReleases = WidgetState.encodeReleases(trackedReleases)
-        val encodedCatalogue = WidgetState.encodeCatalogue(catalogue)
         val now = System.currentTimeMillis()
 
         val glanceIds = GlanceAppWidgetManager(applicationContext).getGlanceIds(TvWidget::class.java)
@@ -64,12 +68,43 @@ class AnticipatedSyncWorker(
             updateAppWidgetState(applicationContext, glanceId) { prefs ->
                 prefs[WidgetState.ANTICIPATED] = encodedAnticipated
                 prefs[WidgetState.TRACKED_RELEASES] = encodedReleases
-                prefs[WidgetState.CATALOGUE] = encodedCatalogue
+                if (catalogue != null) {
+                    prefs[WidgetState.CATALOGUE] = WidgetState.encodeCatalogue(catalogue)
+                }
                 prefs[WidgetState.LAST_SYNC] = now
             }
         }
         TvWidget().updateAll(applicationContext)
-        return Result.success()
+
+        // Retrying (with WorkManager's exponential backoff) is what lets CATALOGUE recover from a
+        // failed first sync on its own — without this, a network blip on first widget-add left the
+        // tab stuck on "LOADING…" until the next daily tick, with no way back short of the user's
+        // manual retry tap.
+        return if (browseResult.isFailure) Result.retry() else Result.success()
+    }
+
+    /**
+     * Shows the user has tracked always stay visible in CATALOGUE, even once they scroll out of
+     * today's browse feed — otherwise there would be no way to find (and untrack) a show that isn't
+     * airing today. Tracked shows are pinned first, then the rest of the browse list.
+     */
+    private fun mergeTracked(
+        browsed: List<com.example.tvwidget.data.CatalogueShow>,
+        tracked: List<com.example.tvwidget.data.TrackedShow>,
+    ): List<com.example.tvwidget.data.CatalogueShow> {
+        val browsedIds = browsed.map { it.tvMazeId }.toSet()
+        val pinned = tracked.filterNot { it.tvMazeId in browsedIds }.map { show ->
+            com.example.tvwidget.data.CatalogueShow(
+                tvMazeId = show.tvMazeId,
+                title = show.title,
+                network = show.network,
+                status = "TRACKED",
+                posterUrl = show.posterUrl,
+                tracked = true,
+            )
+        }
+        val rest = browsed.map { show -> show.copy(tracked = tracked.any { it.tvMazeId == show.tvMazeId }) }
+        return pinned + rest
     }
 
     /** One [Release] each for a tracked show's most recent aired episode and its next scheduled one. */
@@ -131,6 +166,9 @@ class AnticipatedSyncWorker(
         /** Swap this for a TMDB/Trakt-backed implementation once the app's API client exists. */
         var source: AnticipatedSource = BundledAnticipatedSource
 
+        /** Minimum WorkManager allows; caps how fast a failed sync can retry. */
+        private const val RETRY_BACKOFF_SECONDS = 30L
+
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<AnticipatedSyncWorker>(1, TimeUnit.DAYS)
                 .setConstraints(
@@ -138,6 +176,7 @@ class AnticipatedSyncWorker(
                         .setRequiredNetworkType(NetworkType.CONNECTED)
                         .build()
                 )
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, RETRY_BACKOFF_SECONDS, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
@@ -147,12 +186,16 @@ class AnticipatedSyncWorker(
             )
         }
 
-        /** Immediate one-off run — used right after CATALOGUE adds/removes a tracked show. */
+        /**
+         * Immediate one-off run — used right after CATALOGUE adds/removes a tracked show, and by the
+         * tab's own "TAP TO RETRY" empty state after a failed first sync.
+         */
         fun runOnce(context: Context) {
             val request = OneTimeWorkRequestBuilder<AnticipatedSyncWorker>()
                 .setConstraints(
                     Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
                 )
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, RETRY_BACKOFF_SECONDS, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(WORK_NAME_ONE_OFF, ExistingWorkPolicy.REPLACE, request)

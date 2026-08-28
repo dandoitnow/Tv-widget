@@ -23,6 +23,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import com.example.tvwidget.data.FavoriteEpisode
 import com.example.tvwidget.data.FavoriteShow
+import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Tokens
 
 /**
@@ -82,7 +83,7 @@ private fun ShowRow(show: FavoriteShow, expanded: Boolean, logOpen: Boolean, pos
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .height(Tokens.ListRowHeight - 1.dp)
+                .height(Dimens.listRowHeight() - 1.dp)
                 .padding(horizontal = Tokens.RowPaddingHorizontal)
                 .clickable(
                     actionRunCallback<ToggleShowExpandedAction>(

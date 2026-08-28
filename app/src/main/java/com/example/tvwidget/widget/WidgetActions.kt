@@ -84,6 +84,18 @@ class ToggleTrackedAction : ActionCallback {
 }
 
 /**
+ * CATALOGUE's empty-state tap target. A failed first sync used to leave the tab stuck on
+ * "LOADING…" forever — WorkManager's own retry/backoff (see [AnticipatedSyncWorker.runOnce]) now
+ * recovers most of the time on its own, but this gives the user an immediate way to force another
+ * attempt rather than wait.
+ */
+class RetryCatalogueSyncAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        AnticipatedSyncWorker.runOnce(context)
+    }
+}
+
+/**
  * Toggles the favourite for one specific episode, keyed on show title + episode code. Optimistic:
  * the widget state is the source of truth until a sync writes it back.
  */

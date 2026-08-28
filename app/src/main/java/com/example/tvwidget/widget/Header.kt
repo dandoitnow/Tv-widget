@@ -22,6 +22,7 @@ import androidx.glance.layout.width
 import androidx.glance.text.Text
 import com.example.tvwidget.R
 import com.example.tvwidget.data.Tab
+import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Tokens
 
 /**
@@ -86,8 +87,9 @@ private fun TabPill(
     val foreground = if (selected) Tokens.TextPrimary else Tokens.TextMuted
     Row(
         modifier = modifier
-            // Roughly double the previous pill's tap height (was ~15dp of padding + text).
-            .height(30.dp)
+            // Roughly double the previous pill's tap height (was ~15dp of padding + text); a bit
+            // taller again once the widget is resized past the roomy breakpoint.
+            .height(Dimens.tabPillHeight())
             .cornerRadiusCompat(Tokens.RadiusPill)
             .background(background)
             .padding(horizontal = 10.dp)
