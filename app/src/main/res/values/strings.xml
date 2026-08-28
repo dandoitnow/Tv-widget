@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TV Release Tracker</string>
+    <string name="widget_label">TV Releases</string>
+    <string name="widget_description">Today\'s episodes, anticipated premieres and your saved favorites.</string>
+</resources>
