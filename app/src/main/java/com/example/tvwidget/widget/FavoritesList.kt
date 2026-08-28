@@ -7,7 +7,6 @@ import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.lazy.LazyColumn
-import androidx.glance.appwidget.lazy.item
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
