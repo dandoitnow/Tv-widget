@@ -59,14 +59,14 @@ fun FavoritesList(
                 }
             }
         }
-        item { Spacer(GlanceModifier.fillMaxWidth().height(Tokens.ListRowHeight)) }
+        item { Spacer(GlanceModifier.fillMaxWidth().height(Dimens.listRowHeight())) }
     }
 }
 
 @Composable
 private fun EmptyState() {
     Box(
-        modifier = GlanceModifier.fillMaxWidth().height(Tokens.ListRowHeight),
+        modifier = GlanceModifier.fillMaxWidth().height(Dimens.listRowHeight()),
         contentAlignment = Alignment.Center,
     ) {
         Text(text = "NO FAVORITES YET", style = Tokens.mono(Dimens.metaSize(), Tokens.white(0.35f)))
@@ -270,7 +270,7 @@ private fun EpisodeRow(episode: FavoriteEpisode) {
             )
             StarToggle(
                 favorited = true,
-                iconSize = Tokens.StarIconSmall,
+                iconSize = Dimens.starIconSizeSmall(),
                 targetHeight = rowHeight - 1.dp,
                 onClick = actionRunCallback<ToggleFavoriteAction>(
                     actionParametersOf(

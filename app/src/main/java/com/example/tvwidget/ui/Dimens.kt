@@ -7,12 +7,12 @@ import androidx.glance.LocalSize
 
 /**
  * Size-dependent metrics for [com.example.tvwidget.widget.TvWidget]'s `SizeMode.Responsive`
- * breakpoints (see `TvWidget.sizeMode`). At [Tier.COMPACT] the widget renders at the original 5x2
- * design's density; past that, the user has dragged the widget taller, and everything — row height,
- * poster size, tab pills, and every text size — scales up together. Growing only the row height
- * while leaving text at its original size (an earlier version of this file) just produced a huge row
- * with tiny type floating in the middle of it; the whole point of a resize is for the *content* to
- * use the extra space, not merely the container around it.
+ * breakpoints (see `TvWidget.sizeMode`). Even at [Tier.COMPACT] — the smallest size a launcher will
+ * actually hand a 4x2/5x2 placement — text was still sized off the original design mock, which
+ * targeted a much higher effective density than real launchers render at: rows had a lot of empty
+ * vertical padding around tiny type. Every size below is now picked to fill its row edge-to-edge at
+ * COMPACT already, roughly double the original mock's sizes; ROOMY and XL then scale further for
+ * however far past that the user drags the widget.
  *
  * Reading [LocalSize] directly in each composable that needs it (rather than threading a size
  * parameter through every function signature) keeps this out of the call chain entirely.
@@ -33,77 +33,101 @@ object Dimens {
 
     @Composable
     fun listRowHeight(): Dp = when (tier()) {
-        Tier.COMPACT -> Tokens.ListRowHeight
-        Tier.ROOMY -> 64.dp
-        Tier.XL -> 84.dp
+        Tier.COMPACT -> 72.dp
+        Tier.ROOMY -> 96.dp
+        Tier.XL -> 120.dp
     }
 
     @Composable
     fun posterWidth(): Dp = when (tier()) {
-        Tier.COMPACT -> Tokens.PosterWidth
-        Tier.ROOMY -> 40.dp
-        Tier.XL -> 54.dp
-    }
-
-    @Composable
-    fun posterHeight(): Dp = when (tier()) {
-        Tier.COMPACT -> Tokens.PosterHeight
-        Tier.ROOMY -> 56.dp
+        Tier.COMPACT -> 44.dp
+        Tier.ROOMY -> 60.dp
         Tier.XL -> 76.dp
     }
 
     @Composable
+    fun posterHeight(): Dp = when (tier()) {
+        Tier.COMPACT -> 62.dp
+        Tier.ROOMY -> 84.dp
+        Tier.XL -> 106.dp
+    }
+
+    @Composable
     fun tabPillHeight(): Dp = when (tier()) {
-        Tier.COMPACT -> 30.dp
-        Tier.ROOMY -> 42.dp
-        Tier.XL -> 54.dp
+        Tier.COMPACT -> 46.dp
+        Tier.ROOMY -> 60.dp
+        Tier.XL -> 74.dp
     }
 
     /** Tab labels (TODAY / ANTICIPATED / ...) and the header's leading glyphs. */
     @Composable
     fun tabLabelSize(): Float = when (tier()) {
-        Tier.COMPACT -> 8f
-        Tier.ROOMY -> 12f
-        Tier.XL -> 15f
+        Tier.COMPACT -> 14f
+        Tier.ROOMY -> 18f
+        Tier.XL -> 22f
     }
 
     /** A row's show/episode title — the most prominent text in the row. */
     @Composable
     fun titleSize(): Float = when (tier()) {
-        Tier.COMPACT -> Tokens.TitleSize
-        Tier.ROOMY -> 19f
-        Tier.XL -> 24f
+        Tier.COMPACT -> 22f
+        Tier.ROOMY -> 28f
+        Tier.XL -> 34f
     }
 
     /** Meta lines: day/time/network, rank + kind, status labels underneath a title. */
     @Composable
     fun metaSize(): Float = when (tier()) {
-        Tier.COMPACT -> 6.5f
-        Tier.ROOMY -> 10f
-        Tier.XL -> 13f
+        Tier.COMPACT -> 12f
+        Tier.ROOMY -> 15f
+        Tier.XL -> 18f
     }
 
     /** Secondary numeric/status text: episode codes, countdown labels, track buttons. */
     @Composable
     fun accentLabelSize(): Float = when (tier()) {
-        Tier.COMPACT -> 8f
-        Tier.ROOMY -> 12f
-        Tier.XL -> 15f
+        Tier.COMPACT -> 15f
+        Tier.ROOMY -> 19f
+        Tier.XL -> 23f
     }
 
     /** Small status text under the accent label: AIRS TONIGHT, IN 7D's premiere date, etc. */
     @Composable
     fun statusSize(): Float = when (tier()) {
-        Tier.COMPACT -> 6f
-        Tier.ROOMY -> 9f
-        Tier.XL -> 11f
+        Tier.COMPACT -> 10f
+        Tier.ROOMY -> 13f
+        Tier.XL -> 16f
     }
 
     /** The smallest text in the widget: hype-bar premiere dates, rewatch counts. */
     @Composable
     fun smallLabelSize(): Float = when (tier()) {
-        Tier.COMPACT -> 5.5f
-        Tier.ROOMY -> 8f
-        Tier.XL -> 10f
+        Tier.COMPACT -> 9f
+        Tier.ROOMY -> 11f
+        Tier.XL -> 13f
+    }
+
+    /** The favorite-star glyph in a full release row. */
+    @Composable
+    fun starIconSize(): Dp = when (tier()) {
+        Tier.COMPACT -> 18.dp
+        Tier.ROOMY -> 22.dp
+        Tier.XL -> 26.dp
+    }
+
+    /** The favorite-star glyph in a compact episode row (under an expanded FAVORITES show). */
+    @Composable
+    fun starIconSizeSmall(): Dp = when (tier()) {
+        Tier.COMPACT -> 15.dp
+        Tier.ROOMY -> 18.dp
+        Tier.XL -> 21.dp
+    }
+
+    /** The header tab pills' leading glyphs: the TODAY live dot and the FAVORITES star. */
+    @Composable
+    fun tabGlyphSize(): Dp = when (tier()) {
+        Tier.COMPACT -> 9.dp
+        Tier.ROOMY -> 12.dp
+        Tier.XL -> 15.dp
     }
 }

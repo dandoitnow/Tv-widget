@@ -30,7 +30,7 @@ import com.example.tvwidget.ui.Tokens
 fun AnticipatedList(shows: List<AnticipatedShow>, posters: Map<String, Bitmap>) {
     LazyColumn(modifier = GlanceModifier.fillMaxWidth()) {
         items(shows.size) { index -> AnticipatedRow(rank = index + 1, show = shows[index], posters = posters) }
-        item { Spacer(GlanceModifier.fillMaxWidth().height(Tokens.ListRowHeight)) }
+        item { Spacer(GlanceModifier.fillMaxWidth().height(Dimens.listRowHeight())) }
     }
 }
 

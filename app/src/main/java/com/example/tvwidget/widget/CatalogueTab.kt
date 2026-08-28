@@ -57,7 +57,7 @@ fun CatalogueTab(shows: List<CatalogueShow>, posters: Map<String, Bitmap>) {
                     item { SectionHeader("BROWSE") }
                     items(browsable.size) { index -> CatalogueRow(show = browsable[index], posters = posters) }
                 }
-                item { Spacer(GlanceModifier.fillMaxWidth().height(Tokens.ListRowHeight)) }
+                item { Spacer(GlanceModifier.fillMaxWidth().height(Dimens.listRowHeight())) }
             }
         }
     }
@@ -108,7 +108,7 @@ private fun EmptyState() {
     Column(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .height(Tokens.ListRowHeight * 2)
+            .height(Dimens.listRowHeight() * 2)
             .clickable(actionRunCallback<RetryCatalogueSyncAction>()),
         verticalAlignment = Alignment.CenterVertically,
         horizontalAlignment = Alignment.CenterHorizontally,
