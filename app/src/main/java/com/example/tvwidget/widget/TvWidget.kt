@@ -14,13 +14,13 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.background
+import androidx.glance.currentState
 import androidx.glance.layout.Column
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import com.example.tvwidget.data.AnticipatedShow
 import com.example.tvwidget.data.CatalogueShow
-import com.example.tvwidget.data.FavoriteEpisode
 import com.example.tvwidget.data.FavoriteShow
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.Release
@@ -47,68 +47,44 @@ class TvWidget : GlanceAppWidget() {
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
-        val tab = WidgetState.tab(prefs)
-        val releases = WidgetState.releases(prefs)
-        val favorites = WidgetState.favorites(prefs)
-        val todayCount = releases.count { it.isToday }
-
-        // Every interaction (tab switch, star toggle, rewatch +/-, ...) re-invokes provideGlance in
-        // full, so only the tab actually on screen gets its list decoded and its posters resolved —
-        // this used to decode all four tabs' JSON and load every poster on disk regardless of which
-        // one was visible, on every single tap.
-        val anticipated = if (tab == Tab.ANTICIPATED) WidgetState.anticipated(prefs) else emptyList()
-        val favoriteShows = if (tab == Tab.FAVORITES) {
-            WidgetState.favoriteShows(favorites, WidgetState.rewatchLog(prefs))
-        } else {
-            emptyList()
+        // This snapshot exists *only* to decide which tab's posters are worth preloading — the
+        // actual UI below reads state reactively via `currentState()` inside the composable, same as
+        // it always has. An earlier attempt to also thread this snapshot's decoded lists into the
+        // composable as plain parameters (skipping `currentState()` entirely) caused tab switching to
+        // get stuck: Glance's `update()` doesn't guarantee provideGlance fully re-runs on every
+        // action the way a fresh session's initial call does, so those parameters could go stale.
+        // `currentState()` is what stays correctly reactive across however Glance actually schedules
+        // recomposition; this snapshot is a best-effort read only, safe to be occasionally a redraw
+        // behind since the worst case is just missing posters for one frame after a tab switch.
+        val snapshot = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
+        val snapshotTab = WidgetState.tab(snapshot)
+        val snapshotReleases = WidgetState.releases(snapshot)
+        val posterTitles = when (snapshotTab) {
+            Tab.TODAY -> snapshotReleases.map(Release::showTitle)
+            Tab.ANTICIPATED -> WidgetState.anticipated(snapshot).map(AnticipatedShow::title)
+            Tab.FAVORITES -> WidgetState.favoriteShows(
+                WidgetState.favorites(snapshot),
+                WidgetState.rewatchLog(snapshot),
+            ).map(FavoriteShow::title)
+            Tab.CATALOGUE -> WidgetState.catalogue(snapshot).map(CatalogueShow::title)
         }
-        val catalogue = if (tab == Tab.CATALOGUE) WidgetState.catalogue(prefs) else emptyList()
-
-        val posterTitles = when (tab) {
-            Tab.TODAY -> releases.map(Release::showTitle)
-            Tab.ANTICIPATED -> anticipated.map(AnticipatedShow::title)
-            Tab.FAVORITES -> favoriteShows.map(FavoriteShow::title)
-            Tab.CATALOGUE -> catalogue.map(CatalogueShow::title)
-        }
-        // PosterStore keeps a process-lifetime in-memory cache, so repeated redraws of the same tab
-        // (e.g. a star toggle or rewatch count tap, each of which re-invokes provideGlance) don't
-        // re-decode the same PNGs from disk every time.
+        // PosterStore keeps a process-lifetime in-memory cache, so repeated redraws (e.g. a star
+        // toggle or rewatch count tap, each of which redraws the widget) don't re-decode the same
+        // PNGs from disk every time.
         val posters = PosterStore.loadBitmaps(context, posterTitles.map(PosterStore::keyFor))
 
-        val openShow = WidgetState.openShow(prefs)
-        val openRewatchLog = WidgetState.openRewatchLog(prefs)
-
-        provideContent {
-            WidgetContent(
-                tab = tab,
-                todayCount = todayCount,
-                releases = releases,
-                favorites = favorites,
-                anticipated = anticipated,
-                favoriteShows = favoriteShows,
-                catalogue = catalogue,
-                openShow = openShow,
-                openRewatchLog = openRewatchLog,
-                posters = posters,
-            )
-        }
+        provideContent { WidgetContent(posters) }
     }
 }
 
 @Composable
-private fun WidgetContent(
-    tab: Tab,
-    todayCount: Int,
-    releases: List<Release>,
-    favorites: List<FavoriteEpisode>,
-    anticipated: List<AnticipatedShow>,
-    favoriteShows: List<FavoriteShow>,
-    catalogue: List<CatalogueShow>,
-    openShow: String?,
-    openRewatchLog: String?,
-    posters: Map<String, Bitmap>,
-) {
+private fun WidgetContent(posters: Map<String, Bitmap>) {
+    val prefs = currentState<Preferences>()
+    val tab = WidgetState.tab(prefs)
+    val releases = WidgetState.releases(prefs)
+    val favorites = WidgetState.favorites(prefs)
+    val todayCount = releases.count { it.isToday }
+
     GlanceTheme {
         Column(
             modifier = GlanceModifier
@@ -120,16 +96,16 @@ private fun WidgetContent(
             when (tab) {
                 Tab.TODAY -> TodayFeed(releases = releases, favorites = favorites, posters = posters)
 
-                Tab.ANTICIPATED -> AnticipatedList(shows = anticipated, posters = posters)
+                Tab.ANTICIPATED -> AnticipatedList(shows = WidgetState.anticipated(prefs), posters = posters)
 
                 Tab.FAVORITES -> FavoritesList(
-                    shows = favoriteShows,
-                    openShow = openShow,
-                    openRewatchLog = openRewatchLog,
+                    shows = WidgetState.favoriteShows(favorites, WidgetState.rewatchLog(prefs)),
+                    openShow = WidgetState.openShow(prefs),
+                    openRewatchLog = WidgetState.openRewatchLog(prefs),
                     posters = posters,
                 )
 
-                Tab.CATALOGUE -> CatalogueTab(shows = catalogue, posters = posters)
+                Tab.CATALOGUE -> CatalogueTab(shows = WidgetState.catalogue(prefs), posters = posters)
             }
         }
     }
