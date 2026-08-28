@@ -13,7 +13,6 @@ import com.example.tvwidget.data.TrackedShow
 import com.example.tvwidget.data.TrackedShowsRepository
 import com.example.tvwidget.data.WidgetState
 import com.example.tvwidget.work.AnticipatedSyncWorker
-import com.example.tvwidget.work.CountdownTicker
 
 /** Parameter keys shared by the widget's action callbacks. */
 object ActionKeys {
@@ -49,7 +48,6 @@ class SwitchTabAction : ActionCallback {
         mutate(context, glanceId) {
             this[WidgetState.TAB] = tab
         }
-        CountdownTicker.sync(context, Tab.entries.firstOrNull { it.name == tab } ?: Tab.TODAY)
     }
 }
 

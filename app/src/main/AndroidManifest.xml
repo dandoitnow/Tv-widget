@@ -33,15 +33,6 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/tv_widget_info" />
         </receiver>
-
-        <!-- Wakes once a minute to redraw the TODAY countdown; armed only on that tab. -->
-        <receiver
-            android:name=".work.CountdownTicker$Receiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.example.tvwidget.action.COUNTDOWN_TICK" />
-            </intent-filter>
-        </receiver>
     </application>
 
 </manifest>
