@@ -20,7 +20,6 @@ import androidx.glance.layout.fillMaxSize
 import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import com.example.tvwidget.data.AnticipatedShow
-import com.example.tvwidget.data.CatalogueShow
 import com.example.tvwidget.data.FavoriteShow
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.Release
@@ -67,7 +66,6 @@ class TvWidget : GlanceAppWidget() {
                 WidgetState.favorites(snapshot),
                 WidgetState.rewatchLog(snapshot),
             ).map(FavoriteShow::title)
-            Tab.CATALOGUE -> WidgetState.catalogue(snapshot).map(CatalogueShow::title)
         }
         // PosterStore keeps a process-lifetime in-memory cache, so repeated redraws (e.g. a star
         // toggle or rewatch count tap, each of which redraws the widget) don't re-decode the same
@@ -105,8 +103,6 @@ private fun WidgetContent(posters: Map<String, Bitmap>) {
                     openRewatchLog = WidgetState.openRewatchLog(prefs),
                     posters = posters,
                 )
-
-                Tab.CATALOGUE -> CatalogueTab(shows = WidgetState.catalogue(prefs), posters = posters)
             }
         }
     }
