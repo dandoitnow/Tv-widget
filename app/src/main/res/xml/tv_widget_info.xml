@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  5 columns x 2 rows. The design canvas is 360 x 152dp; minWidth/minHeight are the smaller floor a
+  launcher may hand us, and the widget is resizable in both directions from there.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="320dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="5"
+    android:targetCellHeight="2"
+    android:description="@string/widget_description"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:previewImage="@drawable/widget_preview"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />

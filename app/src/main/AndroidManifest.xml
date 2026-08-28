@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- CATALOGUE's TVMaze search/browse, TODAY's real episode dates, and poster art all need this. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.TvWidget">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".widget.TvWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/tv_widget_info" />
+        </receiver>
+
+        <!-- Wakes once a minute to redraw the TODAY countdown; armed only on that tab. -->
+        <receiver
+            android:name=".work.CountdownTicker$Receiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.tvwidget.action.COUNTDOWN_TICK" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>
