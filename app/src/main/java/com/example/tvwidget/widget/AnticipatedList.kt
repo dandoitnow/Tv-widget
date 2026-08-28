@@ -18,6 +18,7 @@ import androidx.glance.layout.width
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import com.example.tvwidget.data.AnticipatedShow
+import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Tokens
 
 /**
@@ -39,7 +40,7 @@ private fun AnticipatedRow(rank: Int, show: AnticipatedShow, posters: Map<String
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .height(Tokens.ListRowHeight - 1.dp)
+                .height(Dimens.listRowHeight() - 1.dp)
                 .padding(horizontal = Tokens.RowPaddingHorizontal),
             verticalAlignment = Alignment.CenterVertically,
         ) {

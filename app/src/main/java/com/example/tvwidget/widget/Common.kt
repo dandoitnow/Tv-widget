@@ -25,6 +25,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import com.example.tvwidget.R
 import com.example.tvwidget.data.PosterStore
+import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Tokens
 
 /** The 1dp `#FFFFFF` @ 6% rule that closes every list row. */
@@ -34,13 +35,16 @@ fun Hairline(color: Color = Tokens.Hairline) {
 }
 
 /**
- * The 26 x 36dp poster block. Draws the real cached art for [title] when [posters] has it —
- * populated by `AnticipatedSyncWorker` via [PosterStore], since widgets cannot fetch images at draw
- * time. Falls back to the placeholder tile for anything not cached yet (e.g. right after a show is
- * first tracked, before the sync worker has run).
+ * The poster block — 26 x 36dp at the compact breakpoint, larger under [Dimens] once the widget is
+ * resized taller. Draws the real cached art for [title] when [posters] has it — populated by
+ * `AnticipatedSyncWorker` via [PosterStore], since widgets cannot fetch images at draw time. Falls
+ * back to the placeholder tile for anything not cached yet (e.g. right after a show is first
+ * tracked, before the sync worker has run).
  */
 @Composable
 fun Poster(title: String, posters: Map<String, Bitmap>, dimmed: Boolean = false) {
+    val width = Dimens.posterWidth()
+    val height = Dimens.posterHeight()
     val bitmap = posters[PosterStore.keyFor(title)]
     if (bitmap != null) {
         Image(
@@ -48,14 +52,14 @@ fun Poster(title: String, posters: Map<String, Bitmap>, dimmed: Boolean = false)
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = GlanceModifier
-                .size(Tokens.PosterWidth, Tokens.PosterHeight)
+                .size(width, height)
                 .cornerRadiusCompat(Tokens.RadiusPoster),
         )
         return
     }
     Box(
         modifier = GlanceModifier
-            .size(Tokens.PosterWidth, Tokens.PosterHeight)
+            .size(width, height)
             .cornerRadiusCompat(Tokens.RadiusPoster)
             .background(ImageProvider(R.drawable.poster_placeholder)),
         contentAlignment = Alignment.BottomCenter,

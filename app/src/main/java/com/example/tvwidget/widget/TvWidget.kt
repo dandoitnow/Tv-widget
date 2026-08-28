@@ -3,6 +3,8 @@ package com.example.tvwidget.widget
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.Preferences
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -32,9 +34,13 @@ class TvWidget : GlanceAppWidget() {
 
     override val stateDefinition: GlanceStateDefinition<Preferences> = PreferencesGlanceStateDefinition
 
-    // The design is fixed at 360 x 152dp; a single layout is rendered at whatever size the launcher
-    // hands us rather than swapping layouts per breakpoint.
-    override val sizeMode: SizeMode = SizeMode.Single
+    // Two breakpoints: the original compact 5x2 design, and a taller one for however far past that
+    // the user drags the widget. Glance picks whichever of these fits the actual bounds it's given;
+    // `Dimens` reads `LocalSize` to tell the two apart inside composition and size rows/posters/tabs
+    // accordingly, so a taller widget gets more breathing room instead of just empty stretched space.
+    override val sizeMode: SizeMode = SizeMode.Responsive(
+        setOf(DpSize(320.dp, 110.dp), DpSize(320.dp, 260.dp))
+    )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         // Posters have to already be on disk by draw time — widgets can't fetch images inside

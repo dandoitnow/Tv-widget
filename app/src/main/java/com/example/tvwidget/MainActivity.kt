@@ -119,28 +119,38 @@ class MainActivity : Activity() {
         root.addView(list)
 
         var searchToken = 0
+        val debounceHandler = android.os.Handler(mainLooper)
+        var pendingSearch: Runnable? = null
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(editable: Editable?) {
                 val query = editable?.toString().orEmpty().trim()
                 val token = ++searchToken
+
+                // Debounced: a fresh keystroke cancels whatever run was still waiting to fire, so a
+                // fast typist never triggers one network request per character.
+                pendingSearch?.let(debounceHandler::removeCallbacks)
                 if (query.length < 2) {
                     resultsAdapter.submit(emptyList())
                     status.text = ""
                     return
                 }
                 status.text = "Searching…"
-                Thread {
-                    val results = runCatching { kotlinx.coroutines.runBlocking { TvMazeApi.search(query) } }
-                        .getOrDefault(emptyList())
-                        .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
-                    runOnUiThread {
-                        if (token != searchToken) return@runOnUiThread // a newer keystroke superseded this one
-                        resultsAdapter.submit(results)
-                        status.text = if (results.isEmpty()) "No shows found." else "${results.size} result(s)."
-                    }
-                }.start()
+                val runnable = Runnable {
+                    Thread {
+                        val results = runCatching { kotlinx.coroutines.runBlocking { TvMazeApi.search(query) } }
+                            .getOrDefault(emptyList())
+                            .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
+                        runOnUiThread {
+                            if (token != searchToken) return@runOnUiThread // a newer keystroke superseded this one
+                            resultsAdapter.submit(results)
+                            status.text = if (results.isEmpty()) "No shows found." else "${results.size} result(s)."
+                        }
+                    }.start()
+                }
+                pendingSearch = runnable
+                debounceHandler.postDelayed(runnable, SEARCH_DEBOUNCE_MS)
             }
         })
 
@@ -196,7 +206,7 @@ class MainActivity : Activity() {
             row.addView(textColumn)
 
             row.addView(Button(this@MainActivity).apply {
-                text = if (show.tracked) "TRACKING" else "+ ADD"
+                text = if (show.tracked) "− UNTRACK" else "+ TRACK"
                 setOnClickListener { toggleTrack(show, this) }
             })
 
@@ -230,7 +240,7 @@ class MainActivity : Activity() {
             }
             items = items.map { if (it.tvMazeId == show.tvMazeId) it.copy(tracked = nowTracked) else it }
             notifyDataSetChanged()
-            button.text = if (nowTracked) "TRACKING" else "+ ADD"
+            button.text = if (nowTracked) "− UNTRACK" else "+ TRACK"
             AnticipatedSyncWorker.runOnce(this@MainActivity)
             Toast.makeText(
                 this@MainActivity,
@@ -264,6 +274,7 @@ class MainActivity : Activity() {
         const val EXTRA_SHOW_TITLE = "show_title"
         const val EXTRA_EPISODE_CODE = "episode_code"
         const val EXTRA_OPEN_SEARCH = "open_search"
+        private const val SEARCH_DEBOUNCE_MS = 300L
         private val ACCENT = Color.parseColor("#F2C81E")
     }
 }

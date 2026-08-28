@@ -24,6 +24,7 @@ import androidx.glance.text.TextAlign
 import com.example.tvwidget.data.FavoriteEpisode
 import com.example.tvwidget.MainActivity
 import com.example.tvwidget.data.Release
+import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Tokens
 
 /**
@@ -73,10 +74,11 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
             // Today's rows carry a full-row accent tint.
             .background(if (release.isToday) Tokens.accent(0.07f) else Tokens.Background),
     ) {
+        val rowHeight = Dimens.listRowHeight()
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .height(Tokens.ListRowHeight - 1.dp)
+                .height(rowHeight - 1.dp)
                 .padding(horizontal = Tokens.RowPaddingHorizontal)
                 // A tap anywhere but on the star deep-links into the app's episode screen.
                 .clickable(
@@ -122,7 +124,7 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
             StarToggle(
                 favorited = favorited,
                 dimmed = dimmed,
-                targetHeight = Tokens.ListRowHeight - 1.dp,
+                targetHeight = rowHeight - 1.dp,
                 onClick = actionRunCallback<ToggleFavoriteAction>(
                     actionParametersOf(
                         ActionKeys.showTitle to release.showTitle,
