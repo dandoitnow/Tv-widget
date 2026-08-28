@@ -18,9 +18,17 @@ import java.net.URL
  * static placeholder for exactly this reason) — art has to already be on disk before `provideGlance`
  * runs. [AnticipatedSyncWorker] is what actually populates this cache; the widget only ever reads it.
  *
- * The cache is bounded: every show ever searched or tracked used to leave a PNG on disk forever.
- * [MAX_CACHED_POSTERS] caps it, evicted least-recently-used first — "used" meaning either re-cached
- * or read via [loadBitmaps], both of which touch the file's mtime.
+ * The disk cache is bounded: every show ever searched or tracked used to leave a PNG on disk
+ * forever. [MAX_CACHED_POSTERS] caps it, evicted least-recently-used first — "used" meaning
+ * re-cached by a sync (see [ensureCached]), which is what keeps a still-relevant poster's mtime
+ * fresh. Loading a bitmap for display does *not* count as a use for this purpose: `provideGlance`
+ * re-invokes on every tap, so touching mtime on every read would make everything look equally
+ * "just used" within minutes and defeat the eviction signal entirely.
+ *
+ * A small process-lifetime [memoryCache] also sits in front of the disk read, since `provideGlance`
+ * re-decodes whatever the active tab needs on every single interaction (tab switch, star toggle,
+ * rewatch count, ...) — without it, the same handful of PNGs get re-read from disk and re-decoded to
+ * a fresh [Bitmap] dozens of times in a row for no reason.
  */
 object PosterStore {
 
@@ -28,8 +36,20 @@ object PosterStore {
     private const val TARGET_WIDTH = 104
     private const val TARGET_HEIGHT = 144
 
-    /** ~104x144 PNGs run well under 50KB each; 200 of them is a low-single-digit-MB cache. */
+    /** ~104x144 PNGs run well under 50KB each; 200 of them is a low-single-digit-MB disk cache. */
     private const val MAX_CACHED_POSTERS = 200
+
+    /** Comfortably more than one tab's worth of rows; bounds the in-memory bitmap cache's RAM use. */
+    private const val MAX_MEMORY_ENTRIES = 60
+
+    private data class CacheEntry(val fileModifiedAt: Long, val bitmap: Bitmap)
+
+    // LinkedHashMap in access-order mode is a textbook bounded LRU: removeEldestEntry runs on every
+    // insert/access and evicts the least-recently-touched entry once the cap is exceeded.
+    private val memoryCache = object : LinkedHashMap<String, CacheEntry>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CacheEntry>) =
+            size > MAX_MEMORY_ENTRIES
+    }
 
     private fun dir(context: Context): File =
         File(context.applicationContext.filesDir, "posters").apply { mkdirs() }
@@ -47,6 +67,8 @@ object PosterStore {
             if (url.isNullOrBlank()) return@withContext false
             val target = file(context, key)
             if (target.exists()) {
+                // Still relevant to a sync — bump its recency so an active poster never gets
+                // evicted just because it happens not to be on screen at the moment.
                 target.setLastModified(System.currentTimeMillis())
                 return@withContext true
             }
@@ -72,21 +94,30 @@ object PosterStore {
         }
 
     /**
-     * Loads every cached bitmap for [keys], skipping any not yet on disk. Reads happen off the UI
-     * thread. Touches each hit's mtime — reading a poster counts as using it, for eviction purposes.
+     * Loads every cached bitmap for [keys], skipping any not yet on disk. A memory-cache hit whose
+     * backing file hasn't changed since skips the disk entirely; everything else decodes off the UI
+     * thread and is memoized for next time.
      */
     suspend fun loadBitmaps(context: Context, keys: Collection<String>): Map<String, Bitmap> =
         withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
-            keys.distinct().mapNotNull { key ->
-                val file = file(context, key)
-                if (!file.exists()) return@mapNotNull null
-                val bitmap = runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
-                    ?: return@mapNotNull null
-                file.setLastModified(now)
-                key to bitmap
-            }.toMap()
+            keys.distinct().mapNotNull { key -> loadOne(context, key)?.let { key to it } }.toMap()
         }
+
+    private fun loadOne(context: Context, key: String): Bitmap? {
+        val file = file(context, key)
+        if (!file.exists()) return null
+        val modifiedAt = file.lastModified()
+
+        synchronized(memoryCache) {
+            memoryCache[key]?.let { cached ->
+                if (cached.fileModifiedAt == modifiedAt) return cached.bitmap
+            }
+        }
+
+        val bitmap = runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull() ?: return null
+        synchronized(memoryCache) { memoryCache[key] = CacheEntry(modifiedAt, bitmap) }
+        return bitmap
+    }
 
     /** Deletes the oldest-by-mtime files once the cache grows past [MAX_CACHED_POSTERS]. */
     private fun evictLeastRecentlyUsed(context: Context) {
@@ -95,6 +126,9 @@ object PosterStore {
         if (overflow <= 0) return
         files.sortedBy { it.lastModified() }
             .take(overflow)
-            .forEach { it.delete() }
+            .forEach { evicted ->
+                evicted.delete()
+                synchronized(memoryCache) { memoryCache.remove(evicted.nameWithoutExtension) }
+            }
     }
 }

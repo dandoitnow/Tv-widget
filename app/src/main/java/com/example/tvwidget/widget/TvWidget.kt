@@ -18,6 +18,10 @@ import androidx.glance.layout.Column
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.state.PreferencesGlanceStateDefinition
+import com.example.tvwidget.data.AnticipatedShow
+import com.example.tvwidget.data.CatalogueShow
+import com.example.tvwidget.data.FavoriteEpisode
+import com.example.tvwidget.data.FavoriteShow
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.Release
 import com.example.tvwidget.data.Tab
@@ -43,34 +47,68 @@ class TvWidget : GlanceAppWidget() {
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        // Posters have to already be on disk by draw time — widgets can't fetch images inside
-        // composition — so every title the widget could show is resolved to a bitmap here, before
-        // `provideContent` runs, using the same `Preferences` composition will read via `currentState`.
         val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
+        val tab = WidgetState.tab(prefs)
         val releases = WidgetState.releases(prefs)
-        val anticipated = WidgetState.anticipated(prefs)
-        val favoriteShows = WidgetState.favoriteShows(
-            WidgetState.favorites(prefs),
-            WidgetState.rewatchLog(prefs),
-        )
-        val catalogue = WidgetState.catalogue(prefs)
-        val posterKeys = (releases.map(Release::showTitle) + anticipated.map { it.title } +
-            favoriteShows.map { it.title } + catalogue.map { it.title })
-            .map(PosterStore::keyFor)
-        val posters = PosterStore.loadBitmaps(context, posterKeys)
+        val favorites = WidgetState.favorites(prefs)
+        val todayCount = releases.count { it.isToday }
 
-        provideContent { WidgetContent(posters) }
+        // Every interaction (tab switch, star toggle, rewatch +/-, ...) re-invokes provideGlance in
+        // full, so only the tab actually on screen gets its list decoded and its posters resolved —
+        // this used to decode all four tabs' JSON and load every poster on disk regardless of which
+        // one was visible, on every single tap.
+        val anticipated = if (tab == Tab.ANTICIPATED) WidgetState.anticipated(prefs) else emptyList()
+        val favoriteShows = if (tab == Tab.FAVORITES) {
+            WidgetState.favoriteShows(favorites, WidgetState.rewatchLog(prefs))
+        } else {
+            emptyList()
+        }
+        val catalogue = if (tab == Tab.CATALOGUE) WidgetState.catalogue(prefs) else emptyList()
+
+        val posterTitles = when (tab) {
+            Tab.TODAY -> releases.map(Release::showTitle)
+            Tab.ANTICIPATED -> anticipated.map(AnticipatedShow::title)
+            Tab.FAVORITES -> favoriteShows.map(FavoriteShow::title)
+            Tab.CATALOGUE -> catalogue.map(CatalogueShow::title)
+        }
+        // PosterStore keeps a process-lifetime in-memory cache, so repeated redraws of the same tab
+        // (e.g. a star toggle or rewatch count tap, each of which re-invokes provideGlance) don't
+        // re-decode the same PNGs from disk every time.
+        val posters = PosterStore.loadBitmaps(context, posterTitles.map(PosterStore::keyFor))
+
+        val openShow = WidgetState.openShow(prefs)
+        val openRewatchLog = WidgetState.openRewatchLog(prefs)
+
+        provideContent {
+            WidgetContent(
+                tab = tab,
+                todayCount = todayCount,
+                releases = releases,
+                favorites = favorites,
+                anticipated = anticipated,
+                favoriteShows = favoriteShows,
+                catalogue = catalogue,
+                openShow = openShow,
+                openRewatchLog = openRewatchLog,
+                posters = posters,
+            )
+        }
     }
 }
 
 @Composable
-private fun WidgetContent(posters: Map<String, Bitmap>) {
-    val prefs = androidx.glance.currentState<Preferences>()
-    val tab = WidgetState.tab(prefs)
-    val releases = WidgetState.releases(prefs)
-    val favorites = WidgetState.favorites(prefs)
-    val todayCount = releases.count { it.isToday }
-
+private fun WidgetContent(
+    tab: Tab,
+    todayCount: Int,
+    releases: List<Release>,
+    favorites: List<FavoriteEpisode>,
+    anticipated: List<AnticipatedShow>,
+    favoriteShows: List<FavoriteShow>,
+    catalogue: List<CatalogueShow>,
+    openShow: String?,
+    openRewatchLog: String?,
+    posters: Map<String, Bitmap>,
+) {
     GlanceTheme {
         Column(
             modifier = GlanceModifier
@@ -82,16 +120,16 @@ private fun WidgetContent(posters: Map<String, Bitmap>) {
             when (tab) {
                 Tab.TODAY -> TodayFeed(releases = releases, favorites = favorites, posters = posters)
 
-                Tab.ANTICIPATED -> AnticipatedList(shows = WidgetState.anticipated(prefs), posters = posters)
+                Tab.ANTICIPATED -> AnticipatedList(shows = anticipated, posters = posters)
 
                 Tab.FAVORITES -> FavoritesList(
-                    shows = WidgetState.favoriteShows(favorites, WidgetState.rewatchLog(prefs)),
-                    openShow = WidgetState.openShow(prefs),
-                    openRewatchLog = WidgetState.openRewatchLog(prefs),
+                    shows = favoriteShows,
+                    openShow = openShow,
+                    openRewatchLog = openRewatchLog,
                     posters = posters,
                 )
 
-                Tab.CATALOGUE -> CatalogueTab(shows = WidgetState.catalogue(prefs), posters = posters)
+                Tab.CATALOGUE -> CatalogueTab(shows = catalogue, posters = posters)
             }
         }
     }
