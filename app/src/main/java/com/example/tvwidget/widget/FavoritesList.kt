@@ -69,7 +69,7 @@ private fun EmptyState() {
         modifier = GlanceModifier.fillMaxWidth().height(Tokens.ListRowHeight),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = "NO FAVORITES YET", style = Tokens.mono65(Tokens.white(0.35f)))
+        Text(text = "NO FAVORITES YET", style = Tokens.mono(Dimens.metaSize(), Tokens.white(0.35f)))
     }
 }
 
@@ -96,7 +96,7 @@ private fun ShowRow(show: FavoriteShow, expanded: Boolean, logOpen: Boolean, pos
             Spacer(GlanceModifier.width(8.dp))
             Text(
                 text = show.title,
-                style = Tokens.display(Tokens.ShowNameSize),
+                style = Tokens.display(Dimens.titleSize() + 1f),
                 maxLines = 1,
                 modifier = GlanceModifier.defaultWeight(),
             )
@@ -105,13 +105,13 @@ private fun ShowRow(show: FavoriteShow, expanded: Boolean, logOpen: Boolean, pos
             Spacer(GlanceModifier.width(4.dp))
             Text(
                 text = show.episodeCountLabel,
-                style = Tokens.mono65(Tokens.TextTertiary),
+                style = Tokens.mono(Dimens.metaSize(), Tokens.TextTertiary),
                 maxLines = 1,
             )
             Spacer(GlanceModifier.width(4.dp))
             // The mock rotates a caret 90 degrees over 300ms. RemoteViews cannot animate a
             // rotation, so the two states are two glyphs.
-            Text(text = if (expanded) "⌄" else "›", style = Tokens.mono8(Tokens.Accent))
+            Text(text = if (expanded) "⌄" else "›", style = Tokens.mono(Dimens.accentLabelSize(), Tokens.Accent))
         }
         Hairline()
     }
@@ -135,7 +135,7 @@ private fun RewatchControl(show: FavoriteShow, logOpen: Boolean) {
     ) {
         Text(
             text = if (logOpen) "REWATCHED ▴" else "REWATCHED ▾",
-            style = Tokens.mono55(Tokens.Accent),
+            style = Tokens.mono(Dimens.smallLabelSize(), Tokens.Accent),
             modifier = GlanceModifier.clickable(
                 actionRunCallback<ToggleRewatchLogAction>(
                     actionParametersOf(ActionKeys.showTitle to show.title)
@@ -152,7 +152,7 @@ private fun RewatchControl(show: FavoriteShow, logOpen: Boolean) {
         Spacer(GlanceModifier.width(4.dp))
         Text(
             text = "×${show.rewatchCount}",
-            style = Tokens.mono7(Tokens.TextPrimary, TextAlign.Center),
+            style = Tokens.mono(Dimens.metaSize(), Tokens.TextPrimary, TextAlign.Center),
             modifier = GlanceModifier.width(9.dp),
         )
         Spacer(GlanceModifier.width(4.dp))
@@ -167,6 +167,11 @@ private fun RewatchControl(show: FavoriteShow, logOpen: Boolean) {
 
 @Composable
 private fun StepperButton(glyph: String, onClick: androidx.glance.action.Action) {
+    val glyphBoxSize = when (Dimens.tier()) {
+        Dimens.Tier.COMPACT -> 9.dp
+        Dimens.Tier.ROOMY -> 13.dp
+        Dimens.Tier.XL -> 17.dp
+    }
     Box(
         modifier = GlanceModifier
             .size(Tokens.TouchTargetCompact)
@@ -175,12 +180,12 @@ private fun StepperButton(glyph: String, onClick: androidx.glance.action.Action)
     ) {
         Box(
             modifier = GlanceModifier
-                .size(9.dp)
+                .size(glyphBoxSize)
                 .cornerRadiusCompat(Tokens.RadiusPill)
                 .background(Tokens.white(0.10f)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text = glyph, style = Tokens.mono7(Tokens.TextPrimary, TextAlign.Center))
+            Text(text = glyph, style = Tokens.mono(Dimens.metaSize(), Tokens.TextPrimary, TextAlign.Center))
         }
     }
 }
@@ -195,30 +200,38 @@ private fun RewatchLogPanel(show: FavoriteShow) {
             .padding(start = Tokens.RowPaddingHorizontal, end = 34.dp, bottom = 5.dp),
         horizontalAlignment = Alignment.End,
     ) {
+        val panelWidth = when (Dimens.tier()) {
+            Dimens.Tier.COMPACT -> 96.dp
+            Dimens.Tier.ROOMY -> 140.dp
+            Dimens.Tier.XL -> 180.dp
+        }
         Column(
             modifier = GlanceModifier
-                .width(96.dp)
+                .width(panelWidth)
                 .cornerRadiusCompat(Tokens.RadiusPanel)
                 .background(Tokens.Surface)
                 .padding(horizontal = 6.dp, vertical = 4.dp),
         ) {
-            Text(text = "REWATCH LOG", style = Tokens.mono5(Tokens.TextTertiary))
+            Text(text = "REWATCH LOG", style = Tokens.mono(Dimens.smallLabelSize(), Tokens.TextTertiary))
             Spacer(GlanceModifier.height(2.dp))
             if (show.rewatchDates.isEmpty()) {
-                Text(text = "NO REWATCHES YET", style = Tokens.mono6(Tokens.white(0.35f)))
+                Text(
+                    text = "NO REWATCHES YET",
+                    style = Tokens.mono(Dimens.metaSize(), Tokens.white(0.35f)),
+                )
             } else {
                 show.rewatchDates.forEachIndexed { index, date ->
                     Row(
                         modifier = GlanceModifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(text = "#${index + 1}", style = Tokens.mono6(Tokens.Accent))
+                        Text(text = "#${index + 1}", style = Tokens.mono(Dimens.metaSize(), Tokens.Accent))
                         Spacer(GlanceModifier.width(6.dp))
-                        Text(text = date, style = Tokens.mono6(Tokens.TextPrimary))
+                        Text(text = date, style = Tokens.mono(Dimens.metaSize(), Tokens.TextPrimary))
                         Spacer(GlanceModifier.defaultWeight())
                         Text(
                             text = if (index == 0) "FIRST" else "REWATCH",
-                            style = Tokens.mono6(Tokens.TextTertiary),
+                            style = Tokens.mono(Dimens.metaSize(), Tokens.TextTertiary),
                         )
                     }
                 }
@@ -227,29 +240,38 @@ private fun RewatchLogPanel(show: FavoriteShow) {
     }
 }
 
-/** 30dp episode row under an expanded show; the star un-favourites that episode. */
+/** 30dp episode row under an expanded show (taller at bigger tiers); the star un-favourites it. */
 @Composable
 private fun EpisodeRow(episode: FavoriteEpisode) {
+    val rowHeight = when (Dimens.tier()) {
+        Dimens.Tier.COMPACT -> Tokens.EpisodeRowHeight
+        Dimens.Tier.ROOMY -> 42.dp
+        Dimens.Tier.XL -> 56.dp
+    }
     Column(modifier = GlanceModifier.fillMaxWidth().background(Tokens.accent(0.05f))) {
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .height(Tokens.EpisodeRowHeight - 1.dp)
+                .height(rowHeight - 1.dp)
                 .padding(start = Tokens.EpisodeRowInset, end = Tokens.RowPaddingHorizontal),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(text = episode.episodeCode, style = Tokens.mono8(Tokens.TextPrimary), maxLines = 1)
+            Text(
+                text = episode.episodeCode,
+                style = Tokens.mono(Dimens.accentLabelSize(), Tokens.TextPrimary),
+                maxLines = 1,
+            )
             Spacer(GlanceModifier.width(7.dp))
             Text(
                 text = episode.label,
-                style = Tokens.mono65(Tokens.TextSecondary),
+                style = Tokens.mono(Dimens.metaSize(), Tokens.TextSecondary),
                 maxLines = 1,
                 modifier = GlanceModifier.defaultWeight(),
             )
             StarToggle(
                 favorited = true,
                 iconSize = Tokens.StarIconSmall,
-                targetHeight = Tokens.EpisodeRowHeight - 1.dp,
+                targetHeight = rowHeight - 1.dp,
                 onClick = actionRunCallback<ToggleFavoriteAction>(
                     actionParametersOf(
                         ActionKeys.showTitle to episode.showTitle,

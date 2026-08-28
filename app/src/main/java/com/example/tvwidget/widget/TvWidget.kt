@@ -38,12 +38,13 @@ class TvWidget : GlanceAppWidget() {
 
     override val stateDefinition: GlanceStateDefinition<Preferences> = PreferencesGlanceStateDefinition
 
-    // Two breakpoints: the original compact 5x2 design, and a taller one for however far past that
-    // the user drags the widget. Glance picks whichever of these fits the actual bounds it's given;
-    // `Dimens` reads `LocalSize` to tell the two apart inside composition and size rows/posters/tabs
-    // accordingly, so a taller widget gets more breathing room instead of just empty stretched space.
+    // Three breakpoints: the original compact 5x2 design, a roomy one, and an XL one for however far
+    // past that the user drags the widget. Glance picks whichever of these fits the actual bounds
+    // it's given; `Dimens` reads `LocalSize` to tell them apart inside composition and scales rows,
+    // posters, tabs, *and every text size* accordingly — a taller widget needs bigger content, not
+    // just a bigger empty container around the same small text.
     override val sizeMode: SizeMode = SizeMode.Responsive(
-        setOf(DpSize(320.dp, 110.dp), DpSize(320.dp, 260.dp))
+        setOf(DpSize(320.dp, 110.dp), DpSize(320.dp, 260.dp), DpSize(320.dp, 500.dp))
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {

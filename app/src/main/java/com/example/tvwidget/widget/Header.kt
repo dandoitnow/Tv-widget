@@ -105,7 +105,7 @@ private fun TabPill(
             leading()
             Spacer(GlanceModifier.width(5.dp))
         }
-        Text(text = label, style = Tokens.mono8(foreground))
+        Text(text = label, style = Tokens.mono(Dimens.tabLabelSize(), foreground))
     }
 }
 

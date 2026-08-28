@@ -96,13 +96,13 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
             Column(modifier = GlanceModifier.defaultWeight()) {
                 Text(
                     text = "${release.dayLabel} · ${release.airTime} · ${release.network}",
-                    style = Tokens.mono65(metaColor),
+                    style = Tokens.mono(Dimens.metaSize(), metaColor),
                     maxLines = 1,
                 )
                 Text(
                     text = release.showTitle,
                     style = Tokens.display(
-                        Tokens.TitleSize,
+                        Dimens.titleSize(),
                         Tokens.dim(Tokens.TextPrimary, dimmed),
                     ),
                     maxLines = 1,
@@ -112,12 +112,16 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = release.episodeCode,
-                    style = Tokens.mono8(Tokens.dim(Tokens.TextPrimary, dimmed), TextAlign.End),
+                    style = Tokens.mono(
+                        Dimens.accentLabelSize(),
+                        Tokens.dim(Tokens.TextPrimary, dimmed),
+                        TextAlign.End,
+                    ),
                     maxLines = 1,
                 )
                 Text(
                     text = release.status.label,
-                    style = Tokens.mono6(statusColor, TextAlign.End),
+                    style = Tokens.mono(Dimens.statusSize(), statusColor, TextAlign.End),
                     maxLines = 1,
                 )
             }

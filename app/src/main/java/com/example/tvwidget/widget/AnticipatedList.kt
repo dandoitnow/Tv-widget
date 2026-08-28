@@ -50,28 +50,28 @@ private fun AnticipatedRow(rank: Int, show: AnticipatedShow, posters: Map<String
                 // The rank is accent-coloured; the rest of the meta line is secondary text. Glance
                 // has no inline spans, so the two colours are two Text nodes in a Row.
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "#$rank", style = Tokens.mono65(Tokens.Accent), maxLines = 1)
+                    Text(text = "#$rank", style = Tokens.mono(Dimens.metaSize(), Tokens.Accent), maxLines = 1)
                     Spacer(GlanceModifier.width(5.dp))
                     Text(
                         text = "${show.kind} · ${show.network}",
-                        style = Tokens.mono65(Tokens.TextSecondary),
+                        style = Tokens.mono(Dimens.metaSize(), Tokens.TextSecondary),
                         maxLines = 1,
                     )
                 }
                 Text(
                     text = show.title,
-                    style = Tokens.display(Tokens.TitleSize),
+                    style = Tokens.display(Dimens.titleSize()),
                     maxLines = 1,
                 )
             }
             Spacer(GlanceModifier.width(6.dp))
-            Column(
-                modifier = GlanceModifier.width(46.dp),
-                horizontalAlignment = Alignment.End,
-            ) {
+            // No fixed width here (the compact design used 46dp): the accent label and hype-bar row
+            // both grow with the text-size tier, so a fixed width would clip "IN 57D" once it's
+            // rendered at the XL tier's larger font.
+            Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = show.awayLabel,
-                    style = Tokens.mono8(Tokens.TextPrimary, TextAlign.End),
+                    style = Tokens.mono(Dimens.accentLabelSize(), Tokens.TextPrimary, TextAlign.End),
                     maxLines = 1,
                 )
                 Spacer(GlanceModifier.height(2.dp))
@@ -80,7 +80,7 @@ private fun AnticipatedRow(rank: Int, show: AnticipatedShow, posters: Map<String
                     Spacer(GlanceModifier.width(3.dp))
                     Text(
                         text = show.premiereDate,
-                        style = Tokens.mono55(Tokens.TextTertiary),
+                        style = Tokens.mono(Dimens.smallLabelSize(), Tokens.TextTertiary),
                         maxLines = 1,
                     )
                 }
@@ -91,12 +91,12 @@ private fun AnticipatedRow(rank: Int, show: AnticipatedShow, posters: Map<String
 }
 
 /**
- * 26 x 2dp track with an accent fill at the hype percentage. Glance has no fractional widths inside
- * a row, so the fill and the remainder are two fixed-width spacers.
+ * 26 x 2dp track (wider at bigger size tiers) with an accent fill at the hype percentage. Glance has
+ * no fractional widths inside a row, so the fill and the remainder are two fixed-width spacers.
  */
 @Composable
 private fun HypeBar(percent: Int) {
-    val width = 26.dp
+    val width = Dimens.posterWidth()
     val filled = width * (percent.coerceIn(0, 100) / 100f)
     Row(
         modifier = GlanceModifier
