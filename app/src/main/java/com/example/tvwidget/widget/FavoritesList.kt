@@ -1,5 +1,6 @@
 package com.example.tvwidget.widget
 
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceModifier
@@ -33,13 +34,21 @@ fun FavoritesList(
     shows: List<FavoriteShow>,
     openShow: String?,
     openRewatchLog: String?,
+    posters: Map<String, Bitmap>,
 ) {
     LazyColumn(modifier = GlanceModifier.fillMaxWidth()) {
         if (shows.isEmpty()) {
             item { EmptyState() }
         }
         shows.forEach { show ->
-            item { ShowRow(show = show, expanded = show.title == openShow, logOpen = show.title == openRewatchLog) }
+            item {
+                ShowRow(
+                    show = show,
+                    expanded = show.title == openShow,
+                    logOpen = show.title == openRewatchLog,
+                    posters = posters,
+                )
+            }
             if (show.title == openRewatchLog) {
                 item { RewatchLogPanel(show) }
             }
@@ -64,7 +73,7 @@ private fun EmptyState() {
 }
 
 @Composable
-private fun ShowRow(show: FavoriteShow, expanded: Boolean, logOpen: Boolean) {
+private fun ShowRow(show: FavoriteShow, expanded: Boolean, logOpen: Boolean, posters: Map<String, Bitmap>) {
     Column(
         modifier = GlanceModifier
             .fillMaxWidth()
@@ -82,7 +91,7 @@ private fun ShowRow(show: FavoriteShow, expanded: Boolean, logOpen: Boolean) {
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Poster()
+            Poster(title = show.title, posters = posters)
             Spacer(GlanceModifier.width(8.dp))
             Text(
                 text = show.title,

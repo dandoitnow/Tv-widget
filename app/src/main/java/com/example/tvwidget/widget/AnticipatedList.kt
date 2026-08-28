@@ -1,5 +1,6 @@
 package com.example.tvwidget.widget
 
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceModifier
@@ -25,15 +26,15 @@ import com.example.tvwidget.ui.Tokens
  * sync time.
  */
 @Composable
-fun AnticipatedList(shows: List<AnticipatedShow>) {
+fun AnticipatedList(shows: List<AnticipatedShow>, posters: Map<String, Bitmap>) {
     LazyColumn(modifier = GlanceModifier.fillMaxWidth()) {
-        items(shows.size) { index -> AnticipatedRow(rank = index + 1, show = shows[index]) }
+        items(shows.size) { index -> AnticipatedRow(rank = index + 1, show = shows[index], posters = posters) }
         item { Spacer(GlanceModifier.fillMaxWidth().height(Tokens.ListRowHeight)) }
     }
 }
 
 @Composable
-private fun AnticipatedRow(rank: Int, show: AnticipatedShow) {
+private fun AnticipatedRow(rank: Int, show: AnticipatedShow, posters: Map<String, Bitmap>) {
     Column(modifier = GlanceModifier.fillMaxWidth()) {
         Row(
             modifier = GlanceModifier
@@ -42,7 +43,7 @@ private fun AnticipatedRow(rank: Int, show: AnticipatedShow) {
                 .padding(horizontal = Tokens.RowPaddingHorizontal),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Poster()
+            Poster(title = show.title, posters = posters)
             Spacer(GlanceModifier.width(8.dp))
             Column(modifier = GlanceModifier.defaultWeight()) {
                 // The rank is accent-coloured; the rest of the meta line is secondary text. Glance

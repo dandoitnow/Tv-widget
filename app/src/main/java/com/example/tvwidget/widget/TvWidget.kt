@@ -1,6 +1,7 @@
 package com.example.tvwidget.widget
 
 import android.content.Context
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.datastore.preferences.core.Preferences
 import androidx.glance.GlanceId
@@ -9,20 +10,17 @@ import androidx.glance.GlanceTheme
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.provideContent
+import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.background
-import androidx.glance.currentState
 import androidx.glance.layout.Column
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.state.PreferencesGlanceStateDefinition
-import com.example.tvwidget.data.Countdown
-import com.example.tvwidget.data.SampleData
+import com.example.tvwidget.data.PosterStore
+import com.example.tvwidget.data.Release
 import com.example.tvwidget.data.Tab
 import com.example.tvwidget.data.WidgetState
 import com.example.tvwidget.ui.Tokens
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * The 5x2 TV release tracker widget.
@@ -39,15 +37,31 @@ class TvWidget : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Single
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        provideContent { WidgetContent() }
+        // Posters have to already be on disk by draw time — widgets can't fetch images inside
+        // composition — so every title the widget could show is resolved to a bitmap here, before
+        // `provideContent` runs, using the same `Preferences` composition will read via `currentState`.
+        val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
+        val releases = WidgetState.releases(prefs)
+        val anticipated = WidgetState.anticipated(prefs)
+        val favoriteShows = WidgetState.favoriteShows(
+            WidgetState.favorites(prefs),
+            WidgetState.rewatchLog(prefs),
+        )
+        val catalogue = WidgetState.catalogue(prefs)
+        val posterKeys = (releases.map(Release::showTitle) + anticipated.map { it.title } +
+            favoriteShows.map { it.title } + catalogue.map { it.title })
+            .map(PosterStore::keyFor)
+        val posters = PosterStore.loadBitmaps(context, posterKeys)
+
+        provideContent { WidgetContent(posters) }
     }
 }
 
 @Composable
-private fun WidgetContent() {
-    val prefs = currentState<Preferences>()
+private fun WidgetContent(posters: Map<String, Bitmap>) {
+    val prefs = androidx.glance.currentState<Preferences>()
     val tab = WidgetState.tab(prefs)
-    val releases = SampleData.releases()
+    val releases = WidgetState.releases(prefs)
     val favorites = WidgetState.favorites(prefs)
     val todayCount = releases.count { it.isToday }
 
@@ -58,42 +72,21 @@ private fun WidgetContent() {
                 .cornerRadiusCompat(Tokens.RadiusWidget)
                 .background(Tokens.Background),
         ) {
-            Header(
-                selected = tab,
-                todayCount = todayCount,
-                readout = headerReadout(tab, prefs),
-            )
+            Header(selected = tab, todayCount = todayCount)
             when (tab) {
-                Tab.TODAY -> TodayFeed(
-                    releases = releases,
-                    favorites = favorites,
-                    showPast = WidgetState.showPast(prefs),
-                )
+                Tab.TODAY -> TodayFeed(releases = releases, favorites = favorites, posters = posters)
 
-                Tab.ANTICIPATED -> AnticipatedList(shows = WidgetState.anticipated(prefs))
+                Tab.ANTICIPATED -> AnticipatedList(shows = WidgetState.anticipated(prefs), posters = posters)
 
                 Tab.FAVORITES -> FavoritesList(
                     shows = WidgetState.favoriteShows(favorites, WidgetState.rewatchLog(prefs)),
                     openShow = WidgetState.openShow(prefs),
                     openRewatchLog = WidgetState.openRewatchLog(prefs),
+                    posters = posters,
                 )
+
+                Tab.CATALOGUE -> CatalogueTab(shows = WidgetState.catalogue(prefs), posters = posters)
             }
         }
     }
 }
-
-/**
- * TODAY shows a live countdown to the next air time, ANTICIPATED the last sync of the premiere
- * list, FAVORITES a static `SAVED`.
- */
-private fun headerReadout(tab: Tab, prefs: Preferences): String = when (tab) {
-    Tab.TODAY -> Countdown.format(Countdown.untilNextRelease(SampleData.releases()))
-    Tab.ANTICIPATED -> {
-        val lastSync = WidgetState.lastSync(prefs)
-        if (lastSync == 0L) "AUTO --:--" else "AUTO " + clockFormat.format(Date(lastSync))
-    }
-
-    Tab.FAVORITES -> "SAVED"
-}
-
-private val clockFormat = SimpleDateFormat("HH:mm", Locale.US)

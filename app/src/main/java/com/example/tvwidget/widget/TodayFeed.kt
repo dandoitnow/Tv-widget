@@ -1,5 +1,6 @@
 package com.example.tvwidget.widget
 
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceModifier
@@ -26,36 +27,26 @@ import com.example.tvwidget.data.Release
 import com.example.tvwidget.ui.Tokens
 
 /**
- * The TODAY tab: the user's watchlist releases in chronological order, aired above and scheduled
- * below.
- *
- * The design asks for the list to rest on today's first release, scrollable back into aired
- * episodes. Glance's `LazyColumn` exposes no scroll position, so instead the aired rows start
- * collapsed behind a single header row and today's first release is the first thing drawn. Tapping
- * the header expands them in place, which keeps the chronology intact; leaving the tab re-collapses
- * them so returning re-pins today.
+ * The TODAY tab: the user's watchlist releases in one continuous chronological list — aired above,
+ * today in the middle, scheduled below. No collapse toggle: whatever the launcher's `ListView`
+ * remembers as the user's scroll offset is all the "resting position" a Glance widget can offer, so
+ * the list is just left complete and in order rather than faking a jump-to-today.
  */
 @Composable
 fun TodayFeed(
     releases: List<Release>,
     favorites: List<FavoriteEpisode>,
-    showPast: Boolean,
+    posters: Map<String, Bitmap>,
 ) {
-    val past = releases.filter { it.hasAired }
-    val rest = releases.filterNot { it.hasAired }
-    val visible = if (showPast) past + rest else rest
-
     LazyColumn(modifier = GlanceModifier.fillMaxWidth()) {
-        if (past.isNotEmpty()) {
-            item { EarlierRow(count = past.size, expanded = showPast) }
-        }
-        items(visible.size) { index ->
-            val release = visible[index]
+        items(releases.size) { index ->
+            val release = releases[index]
             ReleaseRow(
                 release = release,
                 favorited = favorites.any {
                     it.showTitle == release.showTitle && it.episodeCode == release.episodeCode
                 },
+                posters = posters,
             )
         }
         // Bottom padding so the last row can settle clear of the widget edge.
@@ -63,35 +54,9 @@ fun TodayFeed(
     }
 }
 
-/** Collapsed stand-in for the aired rows above today. */
-@Composable
-private fun EarlierRow(count: Int, expanded: Boolean) {
-    Column(
-        modifier = GlanceModifier
-            .fillMaxWidth()
-            .clickable(actionRunCallback<TogglePastRowsAction>()),
-    ) {
-        Row(
-            modifier = GlanceModifier
-                .fillMaxWidth()
-                .height(21.dp)
-                .padding(horizontal = Tokens.RowPaddingHorizontal),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = if (expanded) "HIDE AIRED" else "$count AIRED",
-                style = Tokens.mono6(Tokens.white(0.4f)),
-            )
-            Spacer(GlanceModifier.defaultWeight())
-            Text(text = if (expanded) "-" else "+", style = Tokens.mono8(Tokens.Accent))
-        }
-        Hairline()
-    }
-}
-
 /** One 46dp release row: poster, meta line, title, status column and star. */
 @Composable
-private fun ReleaseRow(release: Release, favorited: Boolean) {
+private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String, Bitmap>) {
     val dimmed = release.hasAired
     val metaColor = Tokens.dim(
         if (release.isToday) Tokens.Accent else Tokens.TextSecondary,
@@ -124,7 +89,7 @@ private fun ReleaseRow(release: Release, favorited: Boolean) {
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Poster(dimmed = dimmed)
+            Poster(title = release.showTitle, posters = posters, dimmed = dimmed)
             Spacer(GlanceModifier.width(8.dp))
             Column(modifier = GlanceModifier.defaultWeight()) {
                 Text(

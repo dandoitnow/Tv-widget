@@ -15,6 +15,7 @@ import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxWidth
+import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
@@ -24,37 +25,50 @@ import com.example.tvwidget.data.Tab
 import com.example.tvwidget.ui.Tokens
 
 /**
- * Fixed tab row across the top of the widget: three pills on the left, a readout on the right.
+ * The tab switcher: a 2x2 grid of full-width pills rather than a single cramped row, so each tab is
+ * a large, easy-to-hit target and there's room for a fourth tab (CATALOGUE) without shrinking text.
+ * There is no trailing readout (the old `AUTO HH:MM` / `SAVED` text) — it named a mechanism the user
+ * doesn't act on, so it just cost space.
  *
  * @param todayCount number of watchlist releases dated today, shown in the first pill.
- * @param readout `HH:MM` countdown on TODAY, `AUTO HH:MM` on ANTICIPATED, `SAVED` on FAVORITES.
  */
 @Composable
-fun Header(selected: Tab, todayCount: Int, readout: String) {
+fun Header(selected: Tab, todayCount: Int) {
     Column {
-        Row(
-            modifier = GlanceModifier
-                .fillMaxWidth()
-                .padding(top = 7.dp, start = 10.dp, end = 10.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TabPill(
-                label = "$todayCount TODAY",
-                tab = Tab.TODAY,
-                selected = selected == Tab.TODAY,
-                leading = { LiveDot() },
-            )
-            Spacer(GlanceModifier.width(5.dp))
-            TabPill(label = "ANTICIPATED", tab = Tab.ANTICIPATED, selected = selected == Tab.ANTICIPATED)
-            Spacer(GlanceModifier.width(5.dp))
-            TabPill(
-                label = "FAVORITES",
-                tab = Tab.FAVORITES,
-                selected = selected == Tab.FAVORITES,
-                leading = { StarGlyph() },
-            )
-            Spacer(GlanceModifier.defaultWeight())
-            Text(text = readout, style = Tokens.mono65(Tokens.Accent))
+        Column(modifier = GlanceModifier.fillMaxWidth().padding(top = 7.dp, start = 10.dp, end = 10.dp, bottom = 6.dp)) {
+            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TabPill(
+                    label = "$todayCount TODAY",
+                    tab = Tab.TODAY,
+                    selected = selected == Tab.TODAY,
+                    leading = { LiveDot() },
+                    modifier = GlanceModifier.defaultWeight(),
+                )
+                Spacer(GlanceModifier.width(6.dp))
+                TabPill(
+                    label = "ANTICIPATED",
+                    tab = Tab.ANTICIPATED,
+                    selected = selected == Tab.ANTICIPATED,
+                    modifier = GlanceModifier.defaultWeight(),
+                )
+            }
+            Spacer(GlanceModifier.height(6.dp))
+            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TabPill(
+                    label = "FAVORITES",
+                    tab = Tab.FAVORITES,
+                    selected = selected == Tab.FAVORITES,
+                    leading = { StarGlyph() },
+                    modifier = GlanceModifier.defaultWeight(),
+                )
+                Spacer(GlanceModifier.width(6.dp))
+                TabPill(
+                    label = "CATALOGUE",
+                    tab = Tab.CATALOGUE,
+                    selected = selected == Tab.CATALOGUE,
+                    modifier = GlanceModifier.defaultWeight(),
+                )
+            }
         }
         Hairline(Tokens.white(0.07f))
     }
@@ -65,27 +79,31 @@ private fun TabPill(
     label: String,
     tab: Tab,
     selected: Boolean,
+    modifier: GlanceModifier,
     leading: (@Composable () -> Unit)? = null,
 ) {
     val background = if (selected) Tokens.accent(0.16f) else Tokens.white(0.06f)
     val foreground = if (selected) Tokens.TextPrimary else Tokens.TextMuted
     Row(
-        modifier = GlanceModifier
+        modifier = modifier
+            // Roughly double the previous pill's tap height (was ~15dp of padding + text).
+            .height(30.dp)
             .cornerRadiusCompat(Tokens.RadiusPill)
             .background(background)
-            .padding(horizontal = 7.dp, vertical = 3.dp)
+            .padding(horizontal = 10.dp)
             .clickable(
                 actionRunCallback<SwitchTabAction>(
                     actionParametersOf(ActionKeys.tab to tab.name)
                 )
             ),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (leading != null) {
             leading()
-            Spacer(GlanceModifier.width(4.dp))
+            Spacer(GlanceModifier.width(5.dp))
         }
-        Text(text = label, style = Tokens.mono65(foreground))
+        Text(text = label, style = Tokens.mono8(foreground))
     }
 }
 
@@ -97,7 +115,7 @@ private fun TabPill(
 private fun LiveDot() {
     Spacer(
         GlanceModifier
-            .size(4.dp)
+            .size(5.dp)
             .cornerRadiusCompat(Tokens.RadiusPill)
             .background(Tokens.Accent)
     )
@@ -109,6 +127,6 @@ private fun StarGlyph() {
         provider = ImageProvider(R.drawable.ic_star_filled),
         contentDescription = null,
         colorFilter = ColorFilter.tint(Tokens.provider(Tokens.Accent)),
-        modifier = GlanceModifier.size(7.dp),
+        modifier = GlanceModifier.size(9.dp),
     )
 }

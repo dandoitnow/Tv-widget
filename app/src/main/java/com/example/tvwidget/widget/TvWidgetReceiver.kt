@@ -18,6 +18,8 @@ class TvWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         AnticipatedSyncWorker.schedule(context)
+        // Otherwise CATALOGUE and real poster art wouldn't show up until the first daily tick.
+        AnticipatedSyncWorker.runOnce(context)
         CountdownTicker.schedule(context)
     }
 

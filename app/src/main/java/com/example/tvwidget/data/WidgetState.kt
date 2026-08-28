@@ -1,7 +1,6 @@
 package com.example.tvwidget.data
 
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.serialization.builtins.ListSerializer
@@ -27,16 +26,17 @@ object WidgetState {
     val ANTICIPATED = stringPreferencesKey("anticipated")
     val LAST_SYNC = longPreferencesKey("last_sync")
 
-    /**
-     * TODAY rests on today's first release. Glance's `LazyColumn` has no scroll-position API, so
-     * the aired rows above today are collapsed behind a header row instead; this flag says whether
-     * the user has opened them. It resets when the tab is left.
-     */
-    val SHOW_PAST = booleanPreferencesKey("show_past")
+    /** TODAY rows built from the user's tracked shows (see [TrackedShowsRepository]); null until synced. */
+    val TRACKED_RELEASES = stringPreferencesKey("tracked_releases")
+
+    /** CATALOGUE's browse list, refreshed alongside ANTICIPATED. */
+    val CATALOGUE = stringPreferencesKey("catalogue")
 
     private val favoritesSerializer = ListSerializer(FavoriteEpisode.serializer())
     private val rewatchSerializer = MapSerializer(String.serializer(), ListSerializer(String.serializer()))
     private val anticipatedSerializer = ListSerializer(AnticipatedShow.serializer())
+    private val releaseSerializer = ListSerializer(Release.serializer())
+    private val catalogueSerializer = ListSerializer(CatalogueShow.serializer())
 
     fun tab(prefs: Preferences): Tab =
         prefs[TAB]?.let { name -> Tab.entries.firstOrNull { it.name == name } } ?: Tab.TODAY
@@ -50,11 +50,20 @@ object WidgetState {
     fun anticipated(prefs: Preferences): List<AnticipatedShow> =
         decode(prefs[ANTICIPATED], anticipatedSerializer) ?: SampleData.anticipated()
 
+    /**
+     * TODAY's rows. Once the user has tracked at least one show, real TVMaze-sourced releases take
+     * over completely; until then the bundled demo content keeps the tab non-empty.
+     */
+    fun releases(prefs: Preferences): List<Release> =
+        decode(prefs[TRACKED_RELEASES], releaseSerializer)?.takeIf { it.isNotEmpty() }
+            ?: SampleData.releases()
+
+    fun catalogue(prefs: Preferences): List<CatalogueShow> =
+        decode(prefs[CATALOGUE], catalogueSerializer) ?: emptyList()
+
     fun openShow(prefs: Preferences): String? = prefs[OPEN_SHOW]?.ifEmpty { null }
 
     fun openRewatchLog(prefs: Preferences): String? = prefs[OPEN_REWATCH_LOG]?.ifEmpty { null }
-
-    fun showPast(prefs: Preferences): Boolean = prefs[SHOW_PAST] ?: false
 
     fun lastSync(prefs: Preferences): Long = prefs[LAST_SYNC] ?: 0L
 
@@ -63,6 +72,10 @@ object WidgetState {
     fun encodeRewatchLog(value: Map<String, List<String>>): String = json.encodeToString(rewatchSerializer, value)
 
     fun encodeAnticipated(value: List<AnticipatedShow>): String = json.encodeToString(anticipatedSerializer, value)
+
+    fun encodeReleases(value: List<Release>): String = json.encodeToString(releaseSerializer, value)
+
+    fun encodeCatalogue(value: List<CatalogueShow>): String = json.encodeToString(catalogueSerializer, value)
 
     /**
      * Groups favourites into shows in first-seen order, which is the order the FAVORITES tab lists

@@ -3,7 +3,7 @@ package com.example.tvwidget.data
 import kotlinx.serialization.Serializable
 
 /** Which tab the widget is showing. Persisted by [name]. */
-enum class Tab { TODAY, ANTICIPATED, FAVORITES }
+enum class Tab { TODAY, ANTICIPATED, FAVORITES, CATALOGUE }
 
 /** Status shown in the right column of a TODAY row. */
 enum class ReleaseStatus(val label: String) {
@@ -78,3 +78,31 @@ data class FavoriteShow(
     val rewatchCount: Int get() = rewatchDates.size
     val episodeCountLabel: String get() = "%02d EP".format(episodes.size)
 }
+
+/**
+ * One show in the CATALOGUE tab's browse list — sourced from TVMaze, not the user's watchlist.
+ * [tracked] is set by the sync worker from [TrackedShowsRepository] before the row is drawn, so the
+ * widget never has to cross-reference the two lists at render time.
+ */
+@Serializable
+data class CatalogueShow(
+    val tvMazeId: Int,
+    val title: String,
+    val network: String,
+    val status: String,
+    val posterUrl: String?,
+    val tracked: Boolean,
+)
+
+/**
+ * A show the user added from CATALOGUE. Stored app-wide (not per-widget-instance) in
+ * [TrackedShowsRepository]; the sync worker turns this list into TODAY's [Release] rows by pulling
+ * each show's previous/next episode from TVMaze.
+ */
+@Serializable
+data class TrackedShow(
+    val tvMazeId: Int,
+    val title: String,
+    val network: String,
+    val posterUrl: String?,
+)

@@ -9,7 +9,10 @@ import androidx.glance.appwidget.state.updateAppWidgetState
 import com.example.tvwidget.data.FavoriteEpisode
 import com.example.tvwidget.data.SampleData
 import com.example.tvwidget.data.Tab
+import com.example.tvwidget.data.TrackedShow
+import com.example.tvwidget.data.TrackedShowsRepository
 import com.example.tvwidget.data.WidgetState
+import com.example.tvwidget.work.AnticipatedSyncWorker
 import com.example.tvwidget.work.CountdownTicker
 
 /** Parameter keys shared by the widget's action callbacks. */
@@ -18,6 +21,11 @@ object ActionKeys {
     val showTitle = ActionParameters.Key<String>("show_title")
     val episodeCode = ActionParameters.Key<String>("episode_code")
     val episodeLabel = ActionParameters.Key<String>("episode_label")
+    val tvMazeId = ActionParameters.Key<Int>("tv_maze_id")
+    val network = ActionParameters.Key<String>("network")
+    val posterUrl = ActionParameters.Key<String>("poster_url")
+    val wasTracked = ActionParameters.Key<Boolean>("was_tracked")
+    val openSearch = ActionParameters.Key<Boolean>("open_search")
 }
 
 /**
@@ -34,24 +42,44 @@ private suspend fun mutate(
     TvWidget().update(context, glanceId)
 }
 
-/** Switches tabs. Leaving TODAY re-collapses the aired rows so returning re-pins today. */
+/** Switches tabs. */
 class SwitchTabAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val tab = parameters[ActionKeys.tab] ?: Tab.TODAY.name
         mutate(context, glanceId) {
             this[WidgetState.TAB] = tab
-            this[WidgetState.SHOW_PAST] = false
         }
         CountdownTicker.sync(context, Tab.entries.firstOrNull { it.name == tab } ?: Tab.TODAY)
     }
 }
 
-/** Reveals or re-hides the aired rows that sit above today in the TODAY feed. */
-class TogglePastRowsAction : ActionCallback {
+/**
+ * Adds or removes a show from tracking, from a CATALOGUE row. This updates the app-wide
+ * [TrackedShowsRepository] (the source of truth, since [com.example.tvwidget.MainActivity]'s search
+ * screen writes there too), flips the row's own state optimistically so the tap feels instant, and
+ * kicks off a background sync to pull real episode dates and poster art for the change.
+ */
+class ToggleTrackedAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        mutate(context, glanceId) {
-            this[WidgetState.SHOW_PAST] = !(this[WidgetState.SHOW_PAST] ?: false)
+        val id = parameters[ActionKeys.tvMazeId] ?: return
+        val title = parameters[ActionKeys.showTitle] ?: return
+        val network = parameters[ActionKeys.network].orEmpty()
+        val posterUrl = parameters[ActionKeys.posterUrl]?.ifEmpty { null }
+        val wasTracked = parameters[ActionKeys.wasTracked] ?: false
+
+        if (wasTracked) {
+            TrackedShowsRepository.remove(context, id)
+        } else {
+            TrackedShowsRepository.add(context, TrackedShow(id, title, network, posterUrl))
         }
+
+        mutate(context, glanceId) {
+            val catalogue = WidgetState.catalogue(this).map { show ->
+                if (show.tvMazeId == id) show.copy(tracked = !wasTracked) else show
+            }
+            this[WidgetState.CATALOGUE] = WidgetState.encodeCatalogue(catalogue)
+        }
+        AnticipatedSyncWorker.runOnce(context)
     }
 }
 

@@ -1,5 +1,6 @@
 package com.example.tvwidget.widget
 
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
@@ -13,6 +14,7 @@ import androidx.glance.action.clickable
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
+import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -22,6 +24,7 @@ import androidx.glance.layout.width
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import com.example.tvwidget.R
+import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.ui.Tokens
 
 /** The 1dp `#FFFFFF` @ 6% rule that closes every list row. */
@@ -31,12 +34,25 @@ fun Hairline(color: Color = Tokens.Hairline) {
 }
 
 /**
- * The 26 x 36dp poster block: placeholder art plus a `POSTER` caption. Swap [ImageProvider] for the
- * cached key art bitmap — widgets cannot fetch images at draw time, so the bitmap has to be on disk
- * already (portrait, ~78 x 108px for 3x) and drawn `ContentScale.Crop`.
+ * The 26 x 36dp poster block. Draws the real cached art for [title] when [posters] has it —
+ * populated by `AnticipatedSyncWorker` via [PosterStore], since widgets cannot fetch images at draw
+ * time. Falls back to the placeholder tile for anything not cached yet (e.g. right after a show is
+ * first tracked, before the sync worker has run).
  */
 @Composable
-fun Poster(dimmed: Boolean = false) {
+fun Poster(title: String, posters: Map<String, Bitmap>, dimmed: Boolean = false) {
+    val bitmap = posters[PosterStore.keyFor(title)]
+    if (bitmap != null) {
+        Image(
+            provider = ImageProvider(bitmap),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = GlanceModifier
+                .size(Tokens.PosterWidth, Tokens.PosterHeight)
+                .cornerRadiusCompat(Tokens.RadiusPoster),
+        )
+        return
+    }
     Box(
         modifier = GlanceModifier
             .size(Tokens.PosterWidth, Tokens.PosterHeight)
