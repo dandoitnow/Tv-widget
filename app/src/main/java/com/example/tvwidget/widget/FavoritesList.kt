@@ -118,44 +118,48 @@ private fun ShowRow(show: FavoriteShow, expanded: Boolean, logOpen: Boolean, pos
 }
 
 /**
- * `REWATCHED` pill: label opens the log, `-` and `+` walk the count.
- *
- * The three controls share a 46dp row with the show name, so they cannot each take a 40dp tap
- * target; they get [Tokens.TouchTargetCompact], the widest the row affords, while the label itself
- * is comfortably wide.
+ * `WATCHED` pill: label opens the log, `-` and `+` walk the count. Every piece — label, count, and
+ * the two steppers — shares one font size ([Dimens.metaSize]) and scales its padding/tap targets
+ * together by tier; mixing sizes here previously (a smaller label next to a bigger count, a tap
+ * target that stayed pinned to 20dp regardless of size) is what made the control look inconsistent
+ * and, at the compact size a real thumb actually has to hit, too small to comfortably tap.
  */
 @Composable
 private fun RewatchControl(show: FavoriteShow, logOpen: Boolean) {
+    val (paddingH, paddingV) = when (Dimens.tier()) {
+        Dimens.Tier.COMPACT -> 8.dp to 4.dp
+        Dimens.Tier.ROOMY -> 10.dp to 6.dp
+        Dimens.Tier.XL -> 12.dp to 8.dp
+    }
     Row(
         modifier = GlanceModifier
             .cornerRadiusCompat(Tokens.RadiusPill)
             .background(Tokens.accent(0.12f))
-            .padding(start = 5.dp, end = 3.dp, top = 2.dp, bottom = 2.dp),
+            .padding(horizontal = paddingH, vertical = paddingV),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = if (logOpen) "REWATCHED ▴" else "REWATCHED ▾",
-            style = Tokens.mono(Dimens.smallLabelSize(), Tokens.Accent),
+            text = if (logOpen) "WATCHED ▴" else "WATCHED ▾",
+            style = Tokens.mono(Dimens.metaSize(), Tokens.Accent),
             modifier = GlanceModifier.clickable(
                 actionRunCallback<ToggleRewatchLogAction>(
                     actionParametersOf(ActionKeys.showTitle to show.title)
                 )
             ),
         )
-        Spacer(GlanceModifier.width(4.dp))
+        Spacer(GlanceModifier.width(6.dp))
         StepperButton(
             glyph = "−",
             onClick = actionRunCallback<RemoveRewatchAction>(
                 actionParametersOf(ActionKeys.showTitle to show.title)
             ),
         )
-        Spacer(GlanceModifier.width(4.dp))
+        Spacer(GlanceModifier.width(6.dp))
         Text(
             text = "×${show.rewatchCount}",
             style = Tokens.mono(Dimens.metaSize(), Tokens.TextPrimary, TextAlign.Center),
-            modifier = GlanceModifier.width(9.dp),
         )
-        Spacer(GlanceModifier.width(4.dp))
+        Spacer(GlanceModifier.width(6.dp))
         StepperButton(
             glyph = "+",
             onClick = actionRunCallback<AddRewatchAction>(
@@ -165,16 +169,17 @@ private fun RewatchControl(show: FavoriteShow, logOpen: Boolean) {
     }
 }
 
+/** The +/- tap target grows with the size tier instead of staying pinned to a small fixed size. */
 @Composable
 private fun StepperButton(glyph: String, onClick: androidx.glance.action.Action) {
-    val glyphBoxSize = when (Dimens.tier()) {
-        Dimens.Tier.COMPACT -> 9.dp
-        Dimens.Tier.ROOMY -> 13.dp
-        Dimens.Tier.XL -> 17.dp
+    val (tapTarget, glyphBoxSize) = when (Dimens.tier()) {
+        Dimens.Tier.COMPACT -> 28.dp to 20.dp
+        Dimens.Tier.ROOMY -> 36.dp to 26.dp
+        Dimens.Tier.XL -> 44.dp to 32.dp
     }
     Box(
         modifier = GlanceModifier
-            .size(Tokens.TouchTargetCompact)
+            .size(tapTarget)
             .clickable(onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -212,11 +217,11 @@ private fun RewatchLogPanel(show: FavoriteShow) {
                 .background(Tokens.Surface)
                 .padding(horizontal = 6.dp, vertical = 4.dp),
         ) {
-            Text(text = "REWATCH LOG", style = Tokens.mono(Dimens.smallLabelSize(), Tokens.TextTertiary))
+            Text(text = "WATCH LOG", style = Tokens.mono(Dimens.smallLabelSize(), Tokens.TextTertiary))
             Spacer(GlanceModifier.height(2.dp))
             if (show.rewatchDates.isEmpty()) {
                 Text(
-                    text = "NO REWATCHES YET",
+                    text = "NOT WATCHED YET",
                     style = Tokens.mono(Dimens.metaSize(), Tokens.white(0.35f)),
                 )
             } else {
@@ -230,7 +235,7 @@ private fun RewatchLogPanel(show: FavoriteShow) {
                         Text(text = date, style = Tokens.mono(Dimens.metaSize(), Tokens.TextPrimary))
                         Spacer(GlanceModifier.defaultWeight())
                         Text(
-                            text = if (index == 0) "FIRST" else "REWATCH",
+                            text = if (index == 0) "FIRST" else "WATCHED",
                             style = Tokens.mono(Dimens.metaSize(), Tokens.TextTertiary),
                         )
                     }

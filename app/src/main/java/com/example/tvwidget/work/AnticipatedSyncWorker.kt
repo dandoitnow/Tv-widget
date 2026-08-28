@@ -1,7 +1,6 @@
 package com.example.tvwidget.work
 
 import android.content.Context
-import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -20,6 +19,7 @@ import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.Release
 import com.example.tvwidget.data.ReleaseStatus
 import com.example.tvwidget.data.SampleData
+import com.example.tvwidget.data.TrackedShow
 import com.example.tvwidget.data.TrackedShowsRepository
 import com.example.tvwidget.data.TvMazeApi
 import com.example.tvwidget.data.WidgetState
@@ -34,12 +34,11 @@ import java.util.concurrent.TimeUnit
  *  1. Refreshes ANTICIPATED (the curated premiere list — never the user's own shows).
  *  2. Rebuilds TODAY from [TrackedShowsRepository] by pulling each tracked show's nearest
  *     previous/next episode from TVMaze.
- *  3. Refreshes CATALOGUE's browse list.
- *  4. Caches poster art for everything above via [PosterStore], since widgets can't fetch images at
+ *  3. Caches poster art for everything above via [PosterStore], since widgets can't fetch images at
  *     draw time.
  *
- * Runs on a daily timer, plus once immediately whenever [runOnce] is called (adding/removing a show
- * from CATALOGUE).
+ * Runs on a daily timer, plus once immediately whenever [runOnce] is called (tracking/untracking a
+ * show from `MainActivity`'s search screen).
  */
 class AnticipatedSyncWorker(
     context: Context,
@@ -51,13 +50,7 @@ class AnticipatedSyncWorker(
         val tracked = TrackedShowsRepository.list(applicationContext)
         val trackedReleases = buildTrackedReleases(tracked)
 
-        // A failed browse() must not blank out whatever CATALOGUE was already showing — on failure
-        // the CATALOGUE key below is simply left untouched, so a transient network error never wipes
-        // an otherwise-populated tab.
-        val browseResult = runCatching { TvMazeApi.browse() }
-        val catalogue = browseResult.getOrNull()?.let { browsed -> mergeTracked(browsed, tracked) }
-
-        cachePosters(anticipated.map { it.title }, tracked, catalogue.orEmpty())
+        cachePosters(anticipated.map { it.title }, tracked)
 
         val encodedAnticipated = WidgetState.encodeAnticipated(anticipated)
         val encodedReleases = WidgetState.encodeReleases(trackedReleases)
@@ -68,49 +61,15 @@ class AnticipatedSyncWorker(
             updateAppWidgetState(applicationContext, glanceId) { prefs ->
                 prefs[WidgetState.ANTICIPATED] = encodedAnticipated
                 prefs[WidgetState.TRACKED_RELEASES] = encodedReleases
-                if (catalogue != null) {
-                    prefs[WidgetState.CATALOGUE] = WidgetState.encodeCatalogue(catalogue)
-                }
                 prefs[WidgetState.LAST_SYNC] = now
             }
         }
         TvWidget().updateAll(applicationContext)
-
-        // Retrying (with WorkManager's exponential backoff) is what lets CATALOGUE recover from a
-        // failed first sync on its own — without this, a network blip on first widget-add left the
-        // tab stuck on "LOADING…" until the next daily tick, with no way back short of the user's
-        // manual retry tap.
-        return if (browseResult.isFailure) Result.retry() else Result.success()
-    }
-
-    /**
-     * Shows the user has tracked always stay visible in CATALOGUE, even once they scroll out of
-     * today's browse feed — otherwise there would be no way to find (and untrack) a show that isn't
-     * airing today. Tracked shows are pinned first, then the rest of the browse list.
-     */
-    private fun mergeTracked(
-        browsed: List<com.example.tvwidget.data.CatalogueShow>,
-        tracked: List<com.example.tvwidget.data.TrackedShow>,
-    ): List<com.example.tvwidget.data.CatalogueShow> {
-        val browsedIds = browsed.map { it.tvMazeId }.toSet()
-        val pinned = tracked.filterNot { it.tvMazeId in browsedIds }.map { show ->
-            com.example.tvwidget.data.CatalogueShow(
-                tvMazeId = show.tvMazeId,
-                title = show.title,
-                network = show.network,
-                status = "TRACKED",
-                posterUrl = show.posterUrl,
-                tracked = true,
-            )
-        }
-        val rest = browsed.map { show -> show.copy(tracked = tracked.any { it.tvMazeId == show.tvMazeId }) }
-        return pinned + rest
+        return Result.success()
     }
 
     /** One [Release] each for a tracked show's most recent aired episode and its next scheduled one. */
-    private suspend fun buildTrackedReleases(
-        tracked: List<com.example.tvwidget.data.TrackedShow>,
-    ): List<Release> {
+    private suspend fun buildTrackedReleases(tracked: List<TrackedShow>): List<Release> {
         val today = LocalDate.now()
         val dayFormat = DateTimeFormatter.ofPattern("EEE dd", Locale.US)
         return tracked.flatMap { show ->
@@ -138,11 +97,7 @@ class AnticipatedSyncWorker(
         }.sortedWith(compareBy({ it.dayOffset }, { it.airTime }))
     }
 
-    private suspend fun cachePosters(
-        anticipatedTitles: List<String>,
-        tracked: List<com.example.tvwidget.data.TrackedShow>,
-        catalogue: List<com.example.tvwidget.data.CatalogueShow>,
-    ) {
+    private suspend fun cachePosters(anticipatedTitles: List<String>, tracked: List<TrackedShow>) {
         // Sample/demo titles (TODAY's bundled seed data, ANTICIPATED) have no known poster URL —
         // resolve one by title via TVMaze's single-show search.
         val demoTitles = (SampleData.releases().map { it.showTitle } + anticipatedTitles).distinct()
@@ -153,10 +108,8 @@ class AnticipatedSyncWorker(
                 PosterStore.ensureCached(applicationContext, key, url)
             }
         }
-        // Tracked and catalogue shows already carry their own poster URL from TVMaze.
-        (tracked.map { it.title to it.posterUrl } + catalogue.map { it.title to it.posterUrl })
-            .distinctBy { it.first }
-            .forEach { (title, url) -> PosterStore.ensureCached(applicationContext, PosterStore.keyFor(title), url) }
+        // Tracked shows already carry their own poster URL from TVMaze (or MainActivity's search).
+        tracked.forEach { show -> PosterStore.ensureCached(applicationContext, PosterStore.keyFor(show.title), show.posterUrl) }
     }
 
     companion object {
@@ -166,9 +119,6 @@ class AnticipatedSyncWorker(
         /** Swap this for a TMDB/Trakt-backed implementation once the app's API client exists. */
         var source: AnticipatedSource = BundledAnticipatedSource
 
-        /** Minimum WorkManager allows; caps how fast a failed sync can retry. */
-        private const val RETRY_BACKOFF_SECONDS = 30L
-
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<AnticipatedSyncWorker>(1, TimeUnit.DAYS)
                 .setConstraints(
@@ -176,7 +126,6 @@ class AnticipatedSyncWorker(
                         .setRequiredNetworkType(NetworkType.CONNECTED)
                         .build()
                 )
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, RETRY_BACKOFF_SECONDS, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
@@ -186,16 +135,12 @@ class AnticipatedSyncWorker(
             )
         }
 
-        /**
-         * Immediate one-off run — used right after CATALOGUE adds/removes a tracked show, and by the
-         * tab's own "TAP TO RETRY" empty state after a failed first sync.
-         */
+        /** Immediate one-off run — used right after a show is tracked/untracked from the search screen. */
         fun runOnce(context: Context) {
             val request = OneTimeWorkRequestBuilder<AnticipatedSyncWorker>()
                 .setConstraints(
                     Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
                 )
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, RETRY_BACKOFF_SECONDS, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(WORK_NAME_ONE_OFF, ExistingWorkPolicy.REPLACE, request)

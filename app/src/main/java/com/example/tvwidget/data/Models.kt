@@ -2,8 +2,13 @@ package com.example.tvwidget.data
 
 import kotlinx.serialization.Serializable
 
-/** Which tab the widget is showing. Persisted by [name]. */
-enum class Tab { TODAY, ANTICIPATED, FAVORITES, CATALOGUE }
+/**
+ * Which tab the widget is showing. Persisted by [name].
+ *
+ * CATALOGUE is deliberately not a tab: there's no widget-side browsable list, just a header button
+ * that opens the app straight into its search screen (see [com.example.tvwidget.widget.Header]).
+ */
+enum class Tab { TODAY, ANTICIPATED, FAVORITES }
 
 /** Status shown in the right column of a TODAY row. */
 enum class ReleaseStatus(val label: String) {
@@ -80,9 +85,8 @@ data class FavoriteShow(
 }
 
 /**
- * One show in the CATALOGUE tab's browse list — sourced from TVMaze, not the user's watchlist.
- * [tracked] is set by the sync worker from [TrackedShowsRepository] before the row is drawn, so the
- * widget never has to cross-reference the two lists at render time.
+ * One TVMaze show shown in [com.example.tvwidget.MainActivity]'s search screen — either a search hit
+ * or an entry from the user's tracked-shows list, both rendered by the same row/adapter there.
  */
 @Serializable
 data class CatalogueShow(

@@ -37,6 +37,17 @@ class MainActivity : Activity() {
 
     private lateinit var resultsAdapter: ResultsAdapter
 
+    /**
+     * The default listing's working set for this window only. Seeded once from
+     * [TrackedShowsRepository] the first time the search screen is shown; after that, tracking or
+     * untracking a show updates this list in place — untracking flips a show's button back to
+     * "+ TRACK" without removing the row, so it stays visible until this window is closed. A fresh
+     * [MainActivity] instance (opening the app again) reseeds from the repository, which is the only
+     * point an untracked show actually drops out of view.
+     */
+    private val sessionTrackedShows = mutableListOf<CatalogueShow>()
+    private var sessionTrackedShowsSeeded = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -148,7 +159,6 @@ class MainActivity : Activity() {
                             .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
                         runOnUiThread {
                             if (token != searchToken) return@runOnUiThread // a newer keystroke superseded this one
-                            resultsAdapter.showingTrackedList = false
                             resultsAdapter.submit(results)
                             status.text = if (results.isEmpty()) "No shows found." else "${results.size} result(s)."
                         }
@@ -162,21 +172,24 @@ class MainActivity : Activity() {
         return root
     }
 
-    /** Populates the results list with everything currently tracked. */
+    /** Populates the results list with [sessionTrackedShows], seeding it from disk on first call. */
     private fun showTrackedList(status: TextView) {
-        val tracked = TrackedShowsRepository.list(this).map { show ->
-            CatalogueShow(
-                tvMazeId = show.tvMazeId,
-                title = show.title,
-                network = show.network,
-                status = "TRACKING",
-                posterUrl = show.posterUrl,
-                tracked = true,
-            )
+        if (!sessionTrackedShowsSeeded) {
+            sessionTrackedShows += TrackedShowsRepository.list(this).map { show ->
+                CatalogueShow(
+                    tvMazeId = show.tvMazeId,
+                    title = show.title,
+                    network = show.network,
+                    status = "TRACKING",
+                    posterUrl = show.posterUrl,
+                    tracked = true,
+                )
+            }
+            sessionTrackedShowsSeeded = true
         }
-        resultsAdapter.showingTrackedList = true
-        resultsAdapter.submit(tracked)
-        status.text = if (tracked.isEmpty()) "No shows tracked yet." else "${tracked.size} tracked."
+        resultsAdapter.submit(sessionTrackedShows.toList())
+        val trackedCount = sessionTrackedShows.count { it.tracked }
+        status.text = if (trackedCount == 0) "No shows tracked yet." else "$trackedCount tracked."
     }
 
     // -- CATALOGUE search results --------------------------------------------------------------
@@ -184,15 +197,6 @@ class MainActivity : Activity() {
     private inner class ResultsAdapter : BaseAdapter() {
         private var items: List<CatalogueShow> = emptyList()
         private val posterCache = HashMap<Int, Bitmap?>()
-
-        /**
-         * True while showing "everything tracked" rather than search results — set by whichever of
-         * [showTrackedList]/the search callback last called [submit]. Untracking a show while this
-         * list is up removes the row entirely, since it no longer belongs in "everything tracked";
-         * untracking from search results just flips the row's button instead, since the show is
-         * still a valid search hit.
-         */
-        var showingTrackedList = false
 
         fun submit(newItems: List<CatalogueShow>) {
             items = newItems
@@ -269,13 +273,19 @@ class MainActivity : Activity() {
             } else {
                 TrackedShowsRepository.remove(this@MainActivity, show.tvMazeId)
             }
-            items = if (showingTrackedList && !nowTracked) {
-                // This view is specifically "everything tracked" — an untracked show doesn't belong
-                // in it anymore, rather than lingering with a stale "+ TRACK" button.
-                items.filterNot { it.tvMazeId == show.tvMazeId }
-            } else {
-                items.map { if (it.tvMazeId == show.tvMazeId) it.copy(tracked = nowTracked) else it }
+
+            // Untracking never removes the row from view here — it flips back to "+ TRACK" and
+            // stays, so the session's tracked-list snapshot only ever grows or has a flag flipped,
+            // never shrinks. Closing this window (a fresh MainActivity re-seeding from
+            // TrackedShowsRepository) is the only thing that actually drops it from the list.
+            val sessionIndex = sessionTrackedShows.indexOfFirst { it.tvMazeId == show.tvMazeId }
+            if (sessionIndex >= 0) {
+                sessionTrackedShows[sessionIndex] = sessionTrackedShows[sessionIndex].copy(tracked = nowTracked)
+            } else if (nowTracked) {
+                sessionTrackedShows += show.copy(tracked = true)
             }
+
+            items = items.map { if (it.tvMazeId == show.tvMazeId) it.copy(tracked = nowTracked) else it }
             notifyDataSetChanged()
             button.text = if (nowTracked) "− UNTRACK" else "+ TRACK"
             AnticipatedSyncWorker.runOnce(this@MainActivity)
