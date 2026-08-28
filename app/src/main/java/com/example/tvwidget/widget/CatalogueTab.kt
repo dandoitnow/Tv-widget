@@ -72,7 +72,7 @@ private fun SectionHeader(label: String) {
             .padding(horizontal = Tokens.RowPaddingHorizontal),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = label, style = Tokens.mono6(Tokens.white(0.4f)))
+        Text(text = label, style = Tokens.mono(Dimens.statusSize(), Tokens.white(0.4f)))
     }
 }
 
@@ -87,11 +87,11 @@ private fun SearchRow() {
             .clickable(actionStartActivity<MainActivity>(actionParametersOf(ActionKeys.openSearch to true))),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = "🔍", style = Tokens.mono8(Tokens.TextPrimary))
+        Text(text = "🔍", style = Tokens.mono(Dimens.accentLabelSize(), Tokens.TextPrimary))
         Spacer(GlanceModifier.width(6.dp))
         Text(
             text = "SEARCH ALL SHOWS",
-            style = Tokens.mono65(Tokens.TextSecondary),
+            style = Tokens.mono(Dimens.metaSize(), Tokens.TextSecondary),
             modifier = GlanceModifier.defaultWeight(),
         )
     }
@@ -113,9 +113,9 @@ private fun EmptyState() {
         verticalAlignment = Alignment.CenterVertically,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text = "COULDN'T LOAD THE CATALOGUE", style = Tokens.mono65(Tokens.white(0.4f)))
+        Text(text = "COULDN'T LOAD THE CATALOGUE", style = Tokens.mono(Dimens.metaSize(), Tokens.white(0.4f)))
         Spacer(GlanceModifier.height(4.dp))
-        Text(text = "TAP TO RETRY", style = Tokens.mono65(Tokens.Accent))
+        Text(text = "TAP TO RETRY", style = Tokens.mono(Dimens.metaSize(), Tokens.Accent))
     }
 }
 
@@ -134,10 +134,10 @@ private fun CatalogueRow(show: CatalogueShow, posters: Map<String, Bitmap>) {
             Column(modifier = GlanceModifier.defaultWeight()) {
                 Text(
                     text = "${show.status} · ${show.network}",
-                    style = Tokens.mono65(Tokens.TextSecondary),
+                    style = Tokens.mono(Dimens.metaSize(), Tokens.TextSecondary),
                     maxLines = 1,
                 )
-                Text(text = show.title, style = Tokens.display(Tokens.TitleSize), maxLines = 1)
+                Text(text = show.title, style = Tokens.display(Dimens.titleSize()), maxLines = 1)
             }
             Spacer(GlanceModifier.width(6.dp))
             TrackToggle(show)
@@ -176,7 +176,7 @@ private fun TrackToggle(show: CatalogueShow) {
     ) {
         Text(
             text = if (show.tracked) "− UNTRACK" else "+ TRACK",
-            style = Tokens.mono6(foreground, TextAlign.Center),
+            style = Tokens.mono(Dimens.statusSize(), foreground, TextAlign.Center),
         )
     }
 }
