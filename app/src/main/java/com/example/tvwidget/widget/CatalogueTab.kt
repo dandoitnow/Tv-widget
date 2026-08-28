@@ -137,7 +137,7 @@ private fun CatalogueRow(show: CatalogueShow, posters: Map<String, Bitmap>) {
                     style = Tokens.mono(Dimens.metaSize(), Tokens.TextSecondary),
                     maxLines = 1,
                 )
-                Text(text = show.title, style = Tokens.display(Dimens.titleSize()), maxLines = 1)
+                Text(text = show.title, style = Tokens.display(Dimens.TitleSize), maxLines = 1)
             }
             Spacer(GlanceModifier.width(6.dp))
             TrackToggle(show)

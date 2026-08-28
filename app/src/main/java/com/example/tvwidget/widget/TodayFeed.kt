@@ -102,7 +102,7 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
                 Text(
                     text = release.showTitle,
                     style = Tokens.display(
-                        Dimens.titleSize(),
+                        Dimens.TitleSize,
                         Tokens.dim(Tokens.TextPrimary, dimmed),
                     ),
                     maxLines = 1,

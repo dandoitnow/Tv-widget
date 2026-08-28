@@ -60,7 +60,7 @@ private fun AnticipatedRow(rank: Int, show: AnticipatedShow, posters: Map<String
                 }
                 Text(
                     text = show.title,
-                    style = Tokens.display(Dimens.titleSize()),
+                    style = Tokens.display(Dimens.TitleSize),
                     maxLines = 1,
                 )
             }
