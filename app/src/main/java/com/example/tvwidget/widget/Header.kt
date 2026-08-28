@@ -115,9 +115,10 @@ private fun TabPill(
  */
 @Composable
 private fun LiveDot() {
+    val size = Dimens.tabGlyphSize() * 0.55f
     Spacer(
         GlanceModifier
-            .size(5.dp)
+            .size(size)
             .cornerRadiusCompat(Tokens.RadiusPill)
             .background(Tokens.Accent)
     )
@@ -129,6 +130,6 @@ private fun StarGlyph() {
         provider = ImageProvider(R.drawable.ic_star_filled),
         contentDescription = null,
         colorFilter = ColorFilter.tint(Tokens.provider(Tokens.Accent)),
-        modifier = GlanceModifier.size(9.dp),
+        modifier = GlanceModifier.size(Dimens.tabGlyphSize()),
     )
 }

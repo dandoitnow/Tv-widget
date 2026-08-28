@@ -73,14 +73,15 @@ fun Poster(title: String, posters: Map<String, Bitmap>, dimmed: Boolean = false)
 }
 
 /**
- * A star toggle. The glyph stays at its documented size while the tap target is padded out to
- * [Tokens.TouchTarget], which is why the caller passes the row height as [targetHeight].
+ * A star toggle. The glyph scales with [Dimens] like everything else in the row; the tap target is
+ * padded out to at least [Tokens.TouchTarget], which is why the caller passes the row height as
+ * [targetHeight].
  */
 @Composable
 fun StarToggle(
     favorited: Boolean,
     onClick: Action,
-    iconSize: Dp = Tokens.StarIcon,
+    iconSize: Dp = Dimens.starIconSize(),
     targetWidth: Dp = Tokens.TouchTarget,
     targetHeight: Dp = Tokens.TouchTarget,
     dimmed: Boolean = false,

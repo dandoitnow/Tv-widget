@@ -51,7 +51,7 @@ fun TodayFeed(
             )
         }
         // Bottom padding so the last row can settle clear of the widget edge.
-        item { Spacer(GlanceModifier.fillMaxWidth().height(Tokens.ListRowHeight)) }
+        item { Spacer(GlanceModifier.fillMaxWidth().height(Dimens.listRowHeight())) }
     }
 }
 
