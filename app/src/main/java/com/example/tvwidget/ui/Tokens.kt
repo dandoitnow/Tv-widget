@@ -22,7 +22,9 @@ object Tokens {
     val Background = Color(0xFF0B0B0B)
     val Surface = Color(0xFF171717)
     val PosterPlaceholder = Color(0xFF262626)
-    val Accent = Color(0xFFF2C81E)
+
+    /** A warmer, more muted metallic gold — the original was a flatter, brighter yellow. */
+    val Accent = Color(0xFFD4AF37)
     val TextPrimary = Color(0xFFFFFFFF)
 
     /** Accent at the tint percentages used by the design (5/7/9/12/14/16/22/45%). */

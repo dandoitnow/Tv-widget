@@ -105,6 +105,7 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
                             actionParametersOf(
                                 ActionKeys.showTitle to release.showTitle,
                                 ActionKeys.episodeCode to release.episodeCode,
+                                ActionKeys.imdbId to (release.imdbId ?: ""),
                             )
                         )
                     ),

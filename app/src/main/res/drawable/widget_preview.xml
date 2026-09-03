@@ -12,7 +12,7 @@
     <path android:fillColor="#0B0B0B" android:pathData="M26,0h308a26,26 0,0 1,26 26v100a26,26 0,0 1,-26 26h-308a26,26 0,0 1,-26 -26v-100a26,26 0,0 1,26 -26z" />
 
     <!-- Row 1: TODAY (selected/accent) + ANTICIPATED -->
-    <path android:fillColor="#29F2C81E" android:pathData="M12,10h164v14a4,4 0,0 1,-4 4h-156a4,4 0,0 1,-4 -4z" />
+    <path android:fillColor="#29D4AF37" android:pathData="M12,10h164v14a4,4 0,0 1,-4 4h-156a4,4 0,0 1,-4 -4z" />
     <path android:fillColor="#0FFFFFFF" android:pathData="M184,10h164a4,4 0,0 1,4 4v10a4,4 0,0 1,-4 4h-164z" />
 
     <!-- Row 2: FAVORITES + CATALOGUE -->
@@ -23,11 +23,11 @@
     <path android:fillColor="#0FFFFFFF" android:pathData="M12,46h336v1h-336z" />
 
     <!-- TODAY's first (highlighted) row: poster, meta lines, countdown -->
-    <path android:fillColor="#1AF2C81E" android:pathData="M12,50h336v46h-336z" />
+    <path android:fillColor="#1AD4AF37" android:pathData="M12,50h336v46h-336z" />
     <path android:fillColor="#262626" android:pathData="M24,56h26v36h-26z" />
     <path android:fillColor="#59FFFFFF" android:pathData="M60,63h180v10h-180z" />
     <path android:fillColor="#33FFFFFF" android:pathData="M60,77h120v8h-120z" />
-    <path android:fillColor="#F2C81E" android:pathData="M300,62l7.3,14.8 16.3,2.4 -11.8,11.5 2.8,16.3 -14.6,-7.7 -14.6,7.7 2.8,-16.3 -11.8,-11.5 16.3,-2.4z" />
+    <path android:fillColor="#D4AF37" android:pathData="M300,62l7.3,14.8 16.3,2.4 -11.8,11.5 2.8,16.3 -14.6,-7.7 -14.6,7.7 2.8,-16.3 -11.8,-11.5 16.3,-2.4z" />
 
     <!-- Two scheduled rows below -->
     <path android:fillColor="#1AFFFFFF" android:pathData="M60,108h150v9h-150z" />
