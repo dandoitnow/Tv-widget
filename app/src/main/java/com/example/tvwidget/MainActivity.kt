@@ -60,6 +60,16 @@ class MainActivity : Activity() {
     private lateinit var resultsAdapter: ResultsAdapter
     private var selectedCatalogueTab = CatalogueTab.TRACKED
 
+    /**
+     * Bumped every time a tab load starts. A tab's fetch can outlive the tab being on screen —
+     * TRENDING pools several days of schedule, so switching away mid-fetch and having the reply
+     * land afterwards would drop trending rows into whatever tab you're now looking at.
+     */
+    private var tabToken = 0
+
+    /** The Catalogue result list, so async loaders can animate it in once data actually arrives. */
+    private var catalogueListRef: View? = null
+
     private enum class CatalogueTab(val label: String) {
         TRACKED("Tracked"),
         TRENDING("Trending"),
@@ -256,6 +266,7 @@ class MainActivity : Activity() {
             )
         }
         root.addView(catalogueList)
+        catalogueListRef = catalogueList
 
         showCurrentTab = {
             when (selectedCatalogueTab) {
@@ -269,7 +280,8 @@ class MainActivity : Activity() {
                 CatalogueTab.TRENDING -> {
                     favoritesScroll.visibility = View.GONE
                     catalogueList.visibility = View.VISIBLE
-                    catalogueList.enterSoftly()
+                    // No enterSoftly here: this tab fetches, so the list is empty at this point and
+                    // the animation would play on nothing. It runs when the rows land instead.
                     resultsAdapter.removeOnUntrack = false
                     loadTrendingAsync(status)
                 }
@@ -285,7 +297,6 @@ class MainActivity : Activity() {
         showCurrentTab()
 
         // -- Search behaviour --------------------------------------------------------------------
-        var searchToken = 0
         val debounceHandler = android.os.Handler(mainLooper)
         var pendingSearch: Runnable? = null
         input.addTextChangedListener(object : TextWatcher {
@@ -293,7 +304,10 @@ class MainActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(editable: Editable?) {
                 val query = editable?.toString().orEmpty().trim()
-                val token = ++searchToken
+                // Search shares [tabToken] with the tab loaders rather than keeping its own: they all
+                // write the same list, so "who owns the list right now" has to be one answer. A
+                // keystroke invalidates a pending TRENDING fetch and vice versa.
+                val token = ++tabToken
 
                 // Debounced: a fresh keystroke cancels whatever run was still waiting, so a fast
                 // typist never triggers one network request per character.
@@ -312,7 +326,7 @@ class MainActivity : Activity() {
                             .getOrDefault(emptyList())
                             .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
                         runOnUiThread {
-                            if (token != searchToken) return@runOnUiThread // superseded by a newer keystroke
+                            if (token != tabToken) return@runOnUiThread // superseded by a keystroke or tab switch
                             resultsAdapter.submit(results)
                             catalogueList.enterSoftly()
                             status.text = if (results.isEmpty()) "NOTHING FOUND" else "${results.size} RESULTS"
@@ -331,6 +345,7 @@ class MainActivity : Activity() {
 
     /** TRACKED: only what's currently tracked — nothing to discover here, just manage it. */
     private fun loadTrackedAsync(status: TextView) {
+        tabToken++ // reads from disk, so it lands immediately — but still cancels any pending fetch
         val tracked = TrackedShowsRepository.list(this).map { show ->
             CatalogueShow(show.tvMazeId, show.title, show.network, "TRACKING", show.posterUrl, tracked = true, show.imdbId)
         }
@@ -338,25 +353,47 @@ class MainActivity : Activity() {
         status.text = if (tracked.isEmpty()) "NOTHING TRACKED YET" else "${tracked.size} TRACKED"
     }
 
-    /** TRENDING: today's popular currently-running shows, independent of what's tracked. */
+    /**
+     * TRENDING: popular currently-running shows you *aren't* already tracking.
+     *
+     * Tracked shows are filtered out rather than shown with a flipped button: this tab is for
+     * discovery, and TRACKED next door already lists everything you follow, so leaving them in just
+     * spends the top of the list — the most popular slots — re-showing things you've already found.
+     *
+     * The filter runs at load time only. Tracking something from here leaves it in place with its
+     * button flipped, so the row doesn't vanish out from under the finger that just tapped it; it's
+     * gone the next time the tab is opened.
+     */
     private fun loadTrendingAsync(status: TextView) {
+        val token = ++tabToken
+        // Clear first. Leaving the previous tab's rows up during the fetch means TRACKED's rows sit
+        // under a "LOADING" label on the TRENDING tab — which reads as trending showing you things
+        // you already follow, the exact opposite of what this tab is for.
+        resultsAdapter.submit(emptyList())
         status.text = "LOADING"
         Thread {
             val trending = runCatching { runBlocking { TvMazeApi.browse() } }.getOrDefault(emptyList())
-                .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
+                .filterNot { TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId) }
             runOnUiThread {
+                if (token != tabToken) return@runOnUiThread // user moved on while this was in flight
                 resultsAdapter.submit(trending)
-                status.text = if (trending.isEmpty()) "COULDN'T LOAD TRENDING" else "TRENDING NOW"
+                catalogueListRef?.enterSoftly()
+                status.text = when {
+                    trending.isEmpty() -> "COULDN'T LOAD TRENDING"
+                    else -> "${trending.size} TRENDING"
+                }
             }
         }.start()
     }
 
     /** Populates [container] with favorited episodes grouped by show, from the widget's Glance state. */
     private fun loadFavoritesAsync(status: TextView, container: LinearLayout) {
+        val token = ++tabToken
         status.text = "LOADING"
         Thread {
             val shows = runCatching { runBlocking { readWidgetFavoriteShows() } }.getOrDefault(emptyList())
             runOnUiThread {
+                if (token != tabToken) return@runOnUiThread // user moved on while this was in flight
                 renderFavorites(container, shows)
                 val episodes = shows.sumOf { it.episodes.size }
                 status.text = if (shows.isEmpty()) "NOTHING SAVED YET" else "$episodes SAVED"
