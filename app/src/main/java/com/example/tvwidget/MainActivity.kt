@@ -71,22 +71,32 @@ class MainActivity : Activity() {
     }
 
     /**
-     * If the widget didn't already know an imdbId (a show tracked before that field existed, whose
-     * TRACKED_RELEASES hasn't been rewritten by a sync since — that sync backfill is a background
-     * convenience, not something a tap should have to wait on), this looks it up live instead of
-     * falling straight to a text search. A brief blank window while that one request completes is a
-     * better trade than "this always goes to a search" — the whole point of an id lookup is to avoid
-     * search whenever there's any reasonable way to.
+     * If the id isn't already known (a show tracked before imdbId existed, whose TRACKED_RELEASES
+     * hasn't been rewritten by a sync since — that backfill is a background convenience, not
+     * something a tap should have to wait on; or any of Catalogue's rows, which don't carry one at
+     * all), this looks it up live instead of falling straight to a text search. A brief delay while
+     * that one request completes is a better trade than "this always goes to a search" — the whole
+     * point of an id lookup is to avoid search whenever there's any reasonable way to.
+     *
+     * [onUnresolved] defaults to the widget pass-through's placeholder screen (there's nothing else
+     * on screen there to fall back to); Catalogue's own callers pass a Toast instead, since replacing
+     * the whole screen just because one IMDb lookup failed would otherwise blow away the tab the user
+     * was looking at.
      */
-    private fun resolveImdbIdThenOpen(show: String, episode: String?, knownImdbId: String?) {
+    private fun resolveImdbIdThenOpen(
+        show: String,
+        episode: String?,
+        knownImdbId: String?,
+        onUnresolved: () -> Unit = { setContentView(buildDeepLinkScreen(show, episode)) },
+    ) {
         if (!knownImdbId.isNullOrBlank()) {
-            if (!openImdb(show, episode, knownImdbId)) setContentView(buildDeepLinkScreen(show, episode))
+            if (!openImdb(show, episode, knownImdbId)) onUnresolved()
             return
         }
         Thread {
             val resolved = runCatching { runBlocking { TvMazeApi.imdbIdFor(show) } }.getOrNull()
             runOnUiThread {
-                if (!openImdb(show, episode, resolved)) setContentView(buildDeepLinkScreen(show, episode))
+                if (!openImdb(show, episode, resolved)) onUnresolved()
             }
         }.start()
     }
@@ -343,6 +353,9 @@ class MainActivity : Activity() {
                 setTextColor(Color.WHITE)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                 setPadding(0, 28, 0, 8)
+                // Same IMDb link as everywhere else — a favorited show has no imdbId on file (only
+                // tracked/trending/search rows carry one from TVMaze), so this always resolves live.
+                setOnClickListener { resolveImdbIdThenOpen(show.title, null, null, onUnresolved = ::showImdbUnavailable) }
             })
             show.episodes.forEach { episode ->
                 container.addView(
@@ -391,6 +404,10 @@ class MainActivity : Activity() {
             }
             runOnUiThread(onDone)
         }.start()
+    }
+
+    private fun showImdbUnavailable() {
+        Toast.makeText(this, "Couldn't open IMDb for that show", Toast.LENGTH_SHORT).show()
     }
 
     /** TRACKED: only what's currently tracked — nothing to discover here, just manage it. */
@@ -462,6 +479,11 @@ class MainActivity : Activity() {
                 text = show.title
                 setTextColor(Color.WHITE)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                // Same IMDb link as TODAY/Popular — tracked/trending/search rows already carry a
+                // known imdbId from TVMaze, so this is usually instant with no live lookup needed.
+                setOnClickListener {
+                    resolveImdbIdThenOpen(show.title, null, show.imdbId, onUnresolved = ::showImdbUnavailable)
+                }
             })
             textColumn.addView(TextView(this@MainActivity).apply {
                 text = "${show.status} · ${show.network}"
