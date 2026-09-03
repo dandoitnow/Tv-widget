@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
@@ -16,8 +17,10 @@ import androidx.glance.background
 import androidx.glance.currentState
 import androidx.glance.layout.Column
 import androidx.glance.layout.fillMaxSize
+import androidx.glance.layout.padding
 import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.state.PreferencesGlanceStateDefinition
+import com.example.tvwidget.R
 import com.example.tvwidget.data.AnticipatedShow
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.Release
@@ -84,7 +87,12 @@ private fun WidgetContent() {
             modifier = GlanceModifier
                 .fillMaxSize()
                 .cornerRadiusCompat(Tokens.RadiusWidget)
-                .background(Tokens.Background),
+                // A warm near-black gradient ground rather than flat black — see Tokens.
+                .background(ImageProvider(R.drawable.surface_widget))
+                // Content is inset from the widget's edge on every side. The old design ran rows
+                // edge to edge, which is what made it read as a table dropped onto the home screen
+                // rather than an object sitting on it.
+                .padding(horizontal = Tokens.EdgeInset, vertical = Tokens.EdgeInset - 2.dp),
         ) {
             Header(selected = tab, todayCount = todayCount)
             when (tab) {
