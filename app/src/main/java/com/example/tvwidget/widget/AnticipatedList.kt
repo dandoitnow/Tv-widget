@@ -26,9 +26,8 @@ import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Tokens
 
 /**
- * The ANTICIPATED tab: an auto-curated premiere list, never the user's chosen shows. The content is
- * cached locally and refreshed once a day by `AnticipatedSyncWorker`; the header shows the last
- * sync time.
+ * The POPULAR tab: an auto-curated premiere list, never the user's own shows. Same card treatment
+ * as TODAY so the two tabs read as one system.
  */
 @Composable
 fun AnticipatedList(shows: List<AnticipatedShow>, posters: Map<String, Bitmap>) {
@@ -40,25 +39,29 @@ fun AnticipatedList(shows: List<AnticipatedShow>, posters: Map<String, Bitmap>) 
 
 @Composable
 private fun AnticipatedRow(rank: Int, show: AnticipatedShow, posters: Map<String, Bitmap>) {
-    Column(modifier = GlanceModifier.fillMaxWidth()) {
+    RowSurface {
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .height(Dimens.listRowHeight() - 1.dp)
+                .height(Dimens.listRowHeight())
                 .padding(horizontal = Tokens.RowPaddingHorizontal),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Poster(title = show.title, posters = posters)
-            Spacer(GlanceModifier.width(8.dp))
+            Spacer(GlanceModifier.width(10.dp))
             Column(modifier = GlanceModifier.defaultWeight()) {
-                // The rank is accent-coloured; the rest of the meta line is secondary text. Glance
-                // has no inline spans, so the two colours are two Text nodes in a Row.
+                // The rank is accent-coloured, the rest of the meta line secondary. Glance has no
+                // inline spans, so the two colours are two Text nodes in a Row.
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "#$rank", style = Tokens.mono(Dimens.metaSize(), Tokens.Accent), maxLines = 1)
-                    Spacer(GlanceModifier.width(5.dp))
+                    Text(
+                        text = "$rank",
+                        style = Tokens.numeric(Dimens.metaSize(), Tokens.Accent),
+                        maxLines = 1,
+                    )
+                    Spacer(GlanceModifier.width(6.dp))
                     Text(
                         text = "${show.kind} · ${show.network}",
-                        style = Tokens.mono(Dimens.metaSize(), Tokens.TextSecondary),
+                        style = Tokens.label(Dimens.metaSize(), Tokens.TextSecondary),
                         maxLines = 1,
                     )
                 }
@@ -67,7 +70,7 @@ private fun AnticipatedRow(rank: Int, show: AnticipatedShow, posters: Map<String
                     style = Tokens.display(Dimens.TitleSize),
                     maxLines = 1,
                     // Same as TODAY's title tap: opens the show's IMDb page (MainActivity resolves
-                    // the id live since these curated entries don't carry a known one ahead of time).
+                    // the id live, since these curated entries carry no known one).
                     modifier = GlanceModifier.clickable(
                         actionStartActivity<MainActivity>(
                             actionParametersOf(ActionKeys.showTitle to show.title)
@@ -75,35 +78,35 @@ private fun AnticipatedRow(rank: Int, show: AnticipatedShow, posters: Map<String
                     ),
                 )
             }
-            Spacer(GlanceModifier.width(6.dp))
-            // No fixed width here (the compact design used 46dp): the accent label and hype-bar row
-            // both grow with the text-size tier, so a fixed width would clip "IN 57D" once it's
-            // rendered at the XL tier's larger font.
+            Spacer(GlanceModifier.width(8.dp))
+            // No fixed width: the countdown and hype row both grow with the size tier, and a fixed
+            // width would clip "IN 57D" at the larger ones.
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = show.awayLabel,
-                    style = Tokens.mono(Dimens.accentLabelSize(), Tokens.TextPrimary, TextAlign.End),
+                    style = Tokens.numeric(Dimens.accentLabelSize(), Tokens.TextPrimary, TextAlign.End),
                     maxLines = 1,
                 )
-                Spacer(GlanceModifier.height(2.dp))
+                Spacer(GlanceModifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     HypeBar(percent = show.hypePercent)
-                    Spacer(GlanceModifier.width(3.dp))
+                    Spacer(GlanceModifier.width(5.dp))
                     Text(
                         text = show.premiereDate,
-                        style = Tokens.mono(Dimens.smallLabelSize(), Tokens.TextTertiary),
+                        style = Tokens.label(Dimens.smallLabelSize(), Tokens.TextTertiary),
                         maxLines = 1,
                     )
                 }
             }
         }
-        Hairline()
     }
 }
 
 /**
- * 26 x 2dp track (wider at bigger size tiers) with an accent fill at the hype percentage. Glance has
- * no fractional widths inside a row, so the fill and the remainder are two fixed-width spacers.
+ * The hype meter. Kept to 2dp and fully rounded so it reads as a fine rule rather than a progress
+ * bar — a chunky bar next to a serif title is the kind of detail that makes a design look built out
+ * of stock components. Glance has no fractional widths inside a row, so the fill and its track are
+ * two fixed-width elements.
  */
 @Composable
 private fun HypeBar(percent: Int) {
@@ -114,8 +117,14 @@ private fun HypeBar(percent: Int) {
             .width(width)
             .height(2.dp)
             .cornerRadiusCompat(Tokens.RadiusPill)
-            .background(Tokens.white(0.14f)),
+            .background(Tokens.white(0.10f)),
     ) {
-        Spacer(GlanceModifier.width(filled).height(2.dp).background(Tokens.Accent))
+        Spacer(
+            GlanceModifier
+                .width(filled)
+                .height(2.dp)
+                .cornerRadiusCompat(Tokens.RadiusPill)
+                .background(Tokens.Accent)
+        )
     }
 }

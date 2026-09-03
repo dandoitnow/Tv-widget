@@ -3,17 +3,20 @@ package com.example.tvwidget
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
+import android.text.InputType
 import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
-import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
@@ -32,24 +35,36 @@ import com.example.tvwidget.data.TrackedShow
 import com.example.tvwidget.data.TrackedShowsRepository
 import com.example.tvwidget.data.TvMazeApi
 import com.example.tvwidget.data.WidgetState
+import com.example.tvwidget.ui.AppTheme
+import com.example.tvwidget.ui.AppTheme.clipToRoundedRect
+import com.example.tvwidget.ui.AppTheme.display
+import com.example.tvwidget.ui.AppTheme.dp
+import com.example.tvwidget.ui.AppTheme.enterSoftly
+import com.example.tvwidget.ui.AppTheme.goldLeaf
+import com.example.tvwidget.ui.AppTheme.label
 import com.example.tvwidget.widget.TvWidget
 import com.example.tvwidget.work.AnticipatedSyncWorker
 import kotlinx.coroutines.runBlocking
 
 /**
  * Host activity. The product is the home-screen widget; this screen exists so the app is
- * launchable, so a whole-row tap in the TODAY feed has somewhere to land, and so CATALOGUE — search,
- * Tracked, Trending, and Favorites — has somewhere to run at all. None of that can live in the
- * widget: a `RemoteViews` has no `EditText` for real search, and rendering Favorites' full detail
- * plus a browseable Trending list there was more chrome than a home-screen widget can reasonably
- * hold.
+ * launchable, so a title tap has somewhere to land, and so CATALOGUE — search, Tracked, Trending
+ * and Favorites — has somewhere to run at all. None of that fits in a `RemoteViews`: no text field
+ * for search, no room for Favorites' full detail, no motion.
+ *
+ * The whole screen is built in code rather than XML to stay consistent with how the rest of this
+ * app is written, and styled through [AppTheme] so the app and the widget read as one product.
  */
 class MainActivity : Activity() {
 
     private lateinit var resultsAdapter: ResultsAdapter
     private var selectedCatalogueTab = CatalogueTab.TRACKED
 
-    private enum class CatalogueTab { TRACKED, TRENDING, FAVORITES }
+    private enum class CatalogueTab(val label: String) {
+        TRACKED("Tracked"),
+        TRENDING("Trending"),
+        FAVORITES("Favorites"),
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,27 +76,25 @@ class MainActivity : Activity() {
 
         when {
             openCatalogue -> setContentView(buildCatalogueScreen())
-            // Tapping a TODAY row's title is meant to open that show's IMDb page — Glance's
+            // Tapping a title in the widget opens that show's IMDb page — Glance's
             // actionStartActivity only launches a typed Activity, not an arbitrary Intent, so the
-            // widget starts this Activity with the show/episode extras and this is the pass-through
-            // that actually fires the ACTION_VIEW intent.
+            // widget starts this Activity with the show extras and this is the pass-through that
+            // actually fires the ACTION_VIEW intent.
             show != null -> resolveImdbIdThenOpen(show, episode, imdbId)
             else -> setContentView(buildHomeScreen())
         }
     }
 
+    // -- IMDb ------------------------------------------------------------------------------------
+
     /**
-     * If the id isn't already known (a show tracked before imdbId existed, whose TRACKED_RELEASES
-     * hasn't been rewritten by a sync since — that backfill is a background convenience, not
-     * something a tap should have to wait on; or any of Catalogue's rows, which don't carry one at
-     * all), this looks it up live instead of falling straight to a text search. A brief delay while
-     * that one request completes is a better trade than "this always goes to a search" — the whole
-     * point of an id lookup is to avoid search whenever there's any reasonable way to.
+     * If the id isn't already known (a show tracked before imdbId existed, or any Catalogue row,
+     * which doesn't carry one), this looks it up live rather than falling straight to a text search.
+     * A brief delay for one request is a better trade than "this always goes to a search".
      *
      * [onUnresolved] defaults to the widget pass-through's placeholder screen (there's nothing else
-     * on screen there to fall back to); Catalogue's own callers pass a Toast instead, since replacing
-     * the whole screen just because one IMDb lookup failed would otherwise blow away the tab the user
-     * was looking at.
+     * on screen there); Catalogue's callers pass a toast instead, since replacing the whole screen
+     * over one failed lookup would blow away the tab the user was looking at.
      */
     private fun resolveImdbIdThenOpen(
         show: String,
@@ -102,10 +115,9 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Opens IMDb directly at the show's own page when [imdbId] is known (TVMaze doesn't expose a
-     * per-episode IMDb crosswalk, so this is the closest a title tap gets to "that exact episode" —
-     * the show's main page, not a text search). Falls back to a text search only when no id could be
-     * found at all. Returns false if nothing on the device could handle the resulting intent.
+     * Opens IMDb at the show's own page when [imdbId] is known (TVMaze exposes no per-episode IMDb
+     * crosswalk, so the show page is as precise as this gets). Falls back to a text search only when
+     * no id could be found at all.
      */
     private fun openImdb(show: String, episode: String?, imdbId: String?): Boolean {
         val url = if (!imdbId.isNullOrBlank()) {
@@ -118,169 +130,161 @@ class MainActivity : Activity() {
         return success
     }
 
-    // -- Screens -------------------------------------------------------------------------------
+    private fun showImdbUnavailable() {
+        Toast.makeText(this, "Couldn't open IMDb for that show", Toast.LENGTH_SHORT).show()
+    }
+
+    // -- Screens ---------------------------------------------------------------------------------
 
     private fun buildDeepLinkScreen(show: String, episode: String?): View {
-        val root = centeredColumn()
-        root.addView(label(text = "$show${episode?.let { " · $it" }.orEmpty()}", sizeSp = 22f, color = Color.WHITE))
-        root.addView(label(text = "Deep link received from the widget.", sizeSp = 13f, color = ACCENT))
+        val root = screenRoot(centered = true)
+        root.addView(TextView(this).apply {
+            text = show
+            display(26f)
+            gravity = Gravity.CENTER
+        })
+        root.addView(TextView(this).apply {
+            text = episode.orEmpty()
+            label(12f, AppTheme.TextSecondary, tracking = 0.18f)
+            gravity = Gravity.CENTER
+            setPadding(0, 8.dp, 0, 0)
+        })
         return root
     }
 
     private fun buildHomeScreen(): View {
-        val root = centeredColumn()
-        root.addView(label(text = getString(R.string.app_name), sizeSp = 22f, color = Color.WHITE))
-        root.addView(label(text = "Add the 5x2 \"TV Releases\" widget to your home screen.", sizeSp = 13f, color = ACCENT))
-        root.addView(
-            Button(this).apply {
-                text = "OPEN CATALOGUE"
-                setOnClickListener { setContentView(buildCatalogueScreen()) }
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 32; gravity = Gravity.CENTER }
-            }
-        )
+        val root = screenRoot(centered = true)
+        root.addView(TextView(this).apply {
+            text = "TV RELEASES"
+            label(11f, AppTheme.Accent, tracking = 0.34f, bold = true)
+            gravity = Gravity.CENTER
+            goldLeaf()
+        })
+        root.addView(TextView(this).apply {
+            text = "Everything you follow,\non your home screen."
+            display(28f)
+            gravity = Gravity.CENTER
+            setLineSpacing(6.dp.toFloat(), 1f)
+            setPadding(0, 14.dp, 0, 0)
+        })
+        root.addView(primaryButton("Open catalogue") {
+            setContentView(buildCatalogueScreen())
+        }.apply {
+            (layoutParams as? LinearLayout.LayoutParams)?.topMargin = 32.dp
+        })
         return root
     }
 
     /**
-     * CATALOGUE: a search field, and three tabs underneath it.
-     *  - TRACKED: only the shows currently being tracked — nothing else. Untracking here removes
-     *    the row immediately; a tab whose whole point is "what I'm tracking" shouldn't keep showing
-     *    something that no longer is.
-     *  - TRENDING: today's popular currently-running shows via [TvMazeApi.browse] (TVMaze's `weight`
-     *    field ranking a "what's actually airing right now" pool — see that function's doc for why).
-     *    Tracking/untracking here just flips a row's button in place; the list is "what's trending"
-     *    regardless of what you've tracked, so a row never appears or disappears because of it.
-     *  - FAVORITES: favorited episodes, read from and written back to the widget's own Glance state.
+     * CATALOGUE. A search field over a segmented control over content:
+     *  - Tracked: only what's currently tracked. Untracking removes the row immediately — a tab whose
+     *    point is "what I'm tracking" shouldn't keep showing something that isn't.
+     *  - Trending: today's popular currently-running shows. Track/untrack flips the button in place;
+     *    a show's trending status doesn't depend on whether you follow it.
+     *  - Favorites: favorited episodes, read from (and written back to) the widget's Glance state.
      *
-     * Typing 2+ characters into the search field covers whichever tab is showing with search
-     * results; clearing it back out restores that tab.
+     * Typing 2+ characters covers whichever tab is showing with search results; clearing restores it.
      */
     private fun buildCatalogueScreen(): View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#0B0B0B"))
-            setPadding(32, 64, 32, 32)
-        }
+        val root = screenRoot()
 
+        // -- Masthead ------------------------------------------------------------------------
         root.addView(TextView(this).apply {
-            text = "CATALOGUE"
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            text = "TV RELEASES"
+            label(10f, AppTheme.Accent, tracking = 0.36f, bold = true)
+            goldLeaf()
+        })
+        root.addView(TextView(this).apply {
+            text = "Catalogue"
+            display(32f)
+            setPadding(0, 6.dp, 0, 0)
         })
 
+        // -- Search ---------------------------------------------------------------------------
         val input = EditText(this).apply {
-            hint = "Show title…"
-            setHintTextColor(Color.parseColor("#666666"))
-            setTextColor(Color.WHITE)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = 24 }
+            hint = "Search every show"
+            setHintTextColor(AppTheme.TextMuted)
+            setTextColor(AppTheme.TextPrimary)
+            typeface = Typeface.DEFAULT
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            background = null
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            maxLines = 1
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        root.addView(input)
+        root.addView(searchField(input))
 
+        // -- Segmented control -----------------------------------------------------------------
         val status = TextView(this).apply {
-            setTextColor(Color.parseColor("#888888"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            setPadding(0, 12, 0, 0)
+            label(10.5f, AppTheme.TextMuted, tracking = 0.2f)
+            setPadding(2.dp, 14.dp, 0, 10.dp)
         }
+        lateinit var showCurrentTab: () -> Unit
+        val segmented = segmentedControl { tab ->
+            selectedCatalogueTab = tab
+            if (input.text.length < 2) showCurrentTab()
+        }
+        root.addView(segmented.view)
         root.addView(status)
 
-        val tabRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = 16 }
+        // -- Content ---------------------------------------------------------------------------
+        val favoritesContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutTransition = android.animation.LayoutTransition()
         }
-        val trackedTabButton = Button(this).apply {
-            text = "TRACKED"
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val trendingTabButton = Button(this).apply {
-            text = "TRENDING"
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val favoritesTabButton = Button(this).apply {
-            text = "FAVORITES"
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        tabRow.addView(trackedTabButton)
-        tabRow.addView(trendingTabButton)
-        tabRow.addView(favoritesTabButton)
-        root.addView(tabRow)
-
-        val favoritesContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val favoritesScroll = ScrollView(this).apply {
             addView(favoritesContainer)
+            isVerticalScrollBarEnabled = false
+            clipToPadding = false
+            setPadding(0, 0, 0, 24.dp)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-            ).apply { topMargin = 12 }
+            )
         }
         root.addView(favoritesScroll)
 
         resultsAdapter = ResultsAdapter()
         val catalogueList = ListView(this).apply {
             adapter = resultsAdapter
+            divider = null
+            dividerHeight = 0
+            isVerticalScrollBarEnabled = false
+            clipToPadding = false
+            setPadding(0, 0, 0, 24.dp)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-            ).apply { topMargin = 12 }
+            )
         }
         root.addView(catalogueList)
 
-        fun highlightTabs() {
-            val selectedColor = Color.parseColor("#D4AF37")
-            val unselectedColor = Color.parseColor("#444444")
-            trackedTabButton.setBackgroundColor(
-                if (selectedCatalogueTab == CatalogueTab.TRACKED) selectedColor else unselectedColor
-            )
-            trendingTabButton.setBackgroundColor(
-                if (selectedCatalogueTab == CatalogueTab.TRENDING) selectedColor else unselectedColor
-            )
-            favoritesTabButton.setBackgroundColor(
-                if (selectedCatalogueTab == CatalogueTab.FAVORITES) selectedColor else unselectedColor
-            )
-        }
-
-        fun showCurrentTab() {
-            highlightTabs()
+        showCurrentTab = {
             when (selectedCatalogueTab) {
                 CatalogueTab.TRACKED -> {
                     favoritesScroll.visibility = View.GONE
                     catalogueList.visibility = View.VISIBLE
+                    catalogueList.enterSoftly()
                     resultsAdapter.removeOnUntrack = true
                     loadTrackedAsync(status)
                 }
                 CatalogueTab.TRENDING -> {
                     favoritesScroll.visibility = View.GONE
                     catalogueList.visibility = View.VISIBLE
+                    catalogueList.enterSoftly()
                     resultsAdapter.removeOnUntrack = false
                     loadTrendingAsync(status)
                 }
                 CatalogueTab.FAVORITES -> {
                     favoritesScroll.visibility = View.VISIBLE
                     catalogueList.visibility = View.GONE
+                    favoritesScroll.enterSoftly()
                     loadFavoritesAsync(status, favoritesContainer)
                 }
             }
         }
-
-        trackedTabButton.setOnClickListener {
-            selectedCatalogueTab = CatalogueTab.TRACKED
-            if (input.text.length < 2) showCurrentTab() else highlightTabs()
-        }
-        trendingTabButton.setOnClickListener {
-            selectedCatalogueTab = CatalogueTab.TRENDING
-            if (input.text.length < 2) showCurrentTab() else highlightTabs()
-        }
-        favoritesTabButton.setOnClickListener {
-            selectedCatalogueTab = CatalogueTab.FAVORITES
-            if (input.text.length < 2) showCurrentTab() else highlightTabs()
-        }
-
+        segmented.select(selectedCatalogueTab, animate = false)
         showCurrentTab()
 
+        // -- Search behaviour --------------------------------------------------------------------
         var searchToken = 0
         val debounceHandler = android.os.Handler(mainLooper)
         var pendingSearch: Runnable? = null
@@ -291,8 +295,8 @@ class MainActivity : Activity() {
                 val query = editable?.toString().orEmpty().trim()
                 val token = ++searchToken
 
-                // Debounced: a fresh keystroke cancels whatever run was still waiting to fire, so a
-                // fast typist never triggers one network request per character.
+                // Debounced: a fresh keystroke cancels whatever run was still waiting, so a fast
+                // typist never triggers one network request per character.
                 pendingSearch?.let(debounceHandler::removeCallbacks)
                 if (query.length < 2) {
                     showCurrentTab()
@@ -300,17 +304,18 @@ class MainActivity : Activity() {
                 }
                 favoritesScroll.visibility = View.GONE
                 catalogueList.visibility = View.VISIBLE
-                resultsAdapter.removeOnUntrack = false // a search hit shouldn't vanish on untrack either
-                status.text = "Searching…"
+                resultsAdapter.removeOnUntrack = false // a search hit shouldn't vanish on untrack
+                status.text = "SEARCHING"
                 val runnable = Runnable {
                     Thread {
                         val results = runCatching { runBlocking { TvMazeApi.search(query) } }
                             .getOrDefault(emptyList())
                             .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
                         runOnUiThread {
-                            if (token != searchToken) return@runOnUiThread // a newer keystroke superseded this one
+                            if (token != searchToken) return@runOnUiThread // superseded by a newer keystroke
                             resultsAdapter.submit(results)
-                            status.text = if (results.isEmpty()) "No shows found." else "${results.size} result(s)."
+                            catalogueList.enterSoftly()
+                            status.text = if (results.isEmpty()) "NOTHING FOUND" else "${results.size} RESULTS"
                         }
                     }.start()
                 }
@@ -322,14 +327,39 @@ class MainActivity : Activity() {
         return root
     }
 
-    /** Populates [container] with favorited episodes grouped by show, reading the widget's Glance state. */
+    // -- Content loading -------------------------------------------------------------------------
+
+    /** TRACKED: only what's currently tracked — nothing to discover here, just manage it. */
+    private fun loadTrackedAsync(status: TextView) {
+        val tracked = TrackedShowsRepository.list(this).map { show ->
+            CatalogueShow(show.tvMazeId, show.title, show.network, "TRACKING", show.posterUrl, tracked = true, show.imdbId)
+        }
+        resultsAdapter.submit(tracked)
+        status.text = if (tracked.isEmpty()) "NOTHING TRACKED YET" else "${tracked.size} TRACKED"
+    }
+
+    /** TRENDING: today's popular currently-running shows, independent of what's tracked. */
+    private fun loadTrendingAsync(status: TextView) {
+        status.text = "LOADING"
+        Thread {
+            val trending = runCatching { runBlocking { TvMazeApi.browse() } }.getOrDefault(emptyList())
+                .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
+            runOnUiThread {
+                resultsAdapter.submit(trending)
+                status.text = if (trending.isEmpty()) "COULDN'T LOAD TRENDING" else "TRENDING NOW"
+            }
+        }.start()
+    }
+
+    /** Populates [container] with favorited episodes grouped by show, from the widget's Glance state. */
     private fun loadFavoritesAsync(status: TextView, container: LinearLayout) {
-        status.text = "Loading…"
+        status.text = "LOADING"
         Thread {
             val shows = runCatching { runBlocking { readWidgetFavoriteShows() } }.getOrDefault(emptyList())
             runOnUiThread {
                 renderFavorites(container, shows)
-                status.text = if (shows.isEmpty()) "No favorites yet." else "${shows.sumOf { it.episodes.size }} favorited."
+                val episodes = shows.sumOf { it.episodes.size }
+                status.text = if (shows.isEmpty()) "NOTHING SAVED YET" else "$episodes SAVED"
             }
         }.start()
     }
@@ -339,53 +369,6 @@ class MainActivity : Activity() {
             ?: return emptyList()
         val prefs = getAppWidgetState(this, PreferencesGlanceStateDefinition, glanceId)
         return WidgetState.favoriteShows(WidgetState.favorites(prefs), WidgetState.rewatchLog(prefs))
-    }
-
-    private fun renderFavorites(container: LinearLayout, shows: List<FavoriteShow>) {
-        container.removeAllViews()
-        if (shows.isEmpty()) {
-            container.addView(label(text = "NO FAVORITES YET", sizeSp = 14f, color = Color.parseColor("#888888")))
-            return
-        }
-        shows.forEach { show ->
-            container.addView(TextView(this).apply {
-                text = "${show.title}   ·   Watched x${show.rewatchCount}"
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                setPadding(0, 28, 0, 8)
-                // Same IMDb link as everywhere else — a favorited show has no imdbId on file (only
-                // tracked/trending/search rows carry one from TVMaze), so this always resolves live.
-                setOnClickListener { resolveImdbIdThenOpen(show.title, null, null, onUnresolved = ::showImdbUnavailable) }
-            })
-            show.episodes.forEach { episode ->
-                container.addView(
-                    LinearLayout(this).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = Gravity.CENTER_VERTICAL
-                        setPadding(24, 8, 0, 8)
-                        addView(TextView(this@MainActivity).apply {
-                            text = "${episode.episodeCode} · ${episode.label}"
-                            setTextColor(Color.parseColor("#AAAAAA"))
-                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                        })
-                        addView(Button(this@MainActivity).apply {
-                            text = "★ UNFAVORITE"
-                            setOnClickListener {
-                                unfavoriteFromApp(show.title, episode.episodeCode) {
-                                    val refreshed = shows.mapNotNull { s ->
-                                        if (s.title != show.title) s
-                                        else s.copy(episodes = s.episodes.filterNot { it.episodeCode == episode.episodeCode })
-                                            .takeIf { it.episodes.isNotEmpty() }
-                                    }
-                                    renderFavorites(container, refreshed)
-                                }
-                            }
-                        })
-                    }
-                )
-            }
-        }
     }
 
     /** Unfavorites one episode by writing straight to the widget's Glance state, then redraws it. */
@@ -406,42 +389,89 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun showImdbUnavailable() {
-        Toast.makeText(this, "Couldn't open IMDb for that show", Toast.LENGTH_SHORT).show()
-    }
+    // -- Favorites rendering ---------------------------------------------------------------------
 
-    /** TRACKED: only what's currently tracked — nothing to discover here, just manage it. */
-    private fun loadTrackedAsync(status: TextView) {
-        val tracked = TrackedShowsRepository.list(this).map { show ->
-            CatalogueShow(show.tvMazeId, show.title, show.network, "TRACKING", show.posterUrl, tracked = true, show.imdbId)
+    private fun renderFavorites(container: LinearLayout, shows: List<FavoriteShow>) {
+        container.removeAllViews()
+        if (shows.isEmpty()) {
+            container.addView(emptyState("Nothing saved yet", "Star an episode in the widget to keep it here."))
+            return
         }
-        resultsAdapter.submit(tracked)
-        status.text = if (tracked.isEmpty()) "No shows tracked yet." else "${tracked.size} tracked."
+        shows.forEach { show ->
+            container.addView(favoriteCard(container, shows, show))
+        }
     }
 
-    /** TRENDING: today's popular currently-running shows, independent of what's tracked. */
-    private fun loadTrendingAsync(status: TextView) {
-        status.text = "Loading trending shows…"
-        Thread {
-            val trending = runCatching { runBlocking { TvMazeApi.browse() } }.getOrDefault(emptyList())
-                .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
-            runOnUiThread {
-                resultsAdapter.submit(trending)
-                status.text = if (trending.isEmpty()) "Couldn't load trending shows." else "${trending.size} trending."
+    private fun favoriteCard(
+        container: LinearLayout,
+        allShows: List<FavoriteShow>,
+        show: FavoriteShow,
+    ): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = AppTheme.liftedSurface(AppTheme.SurfaceRaised, AppTheme.Surface, 20.dp.toFloat())
+            setPadding(18.dp, 16.dp, 18.dp, 8.dp)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 12.dp }
+        }
+
+        card.addView(TextView(this).apply {
+            text = show.title
+            display(19f)
+            maxLines = 1
+            setOnClickListener {
+                resolveImdbIdThenOpen(show.title, null, null, onUnresolved = ::showImdbUnavailable)
             }
-        }.start()
+        })
+        card.addView(TextView(this).apply {
+            text = "WATCHED ×${show.rewatchCount}  ·  ${show.episodes.size} SAVED"
+            label(10f, AppTheme.Accent, tracking = 0.22f)
+            setPadding(0, 5.dp, 0, 0)
+        })
+
+        show.episodes.forEach { episode ->
+            card.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 12.dp, 0, 4.dp)
+                addView(TextView(this@MainActivity).apply {
+                    text = episode.episodeCode
+                    typeface = Typeface.MONOSPACE
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setTextColor(AppTheme.TextPrimary)
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = episode.label
+                    label(10.5f, AppTheme.TextMuted, tracking = 0.14f)
+                    maxLines = 1
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                        .apply { marginStart = 12.dp }
+                })
+                addView(pillButton(text = "REMOVE", active = false) {
+                    unfavoriteFromApp(show.title, episode.episodeCode) {
+                        val refreshed = allShows.mapNotNull { s ->
+                            if (s.title != show.title) s
+                            else s.copy(episodes = s.episodes.filterNot { it.episodeCode == episode.episodeCode })
+                                .takeIf { it.episodes.isNotEmpty() }
+                        }
+                        renderFavorites(container, refreshed)
+                    }
+                })
+            })
+        }
+        return card
     }
 
-    // -- CATALOGUE search/tracked/trending results -----------------------------------------------
+    // -- Catalogue rows --------------------------------------------------------------------------
 
     private inner class ResultsAdapter : BaseAdapter() {
         private var items: List<CatalogueShow> = emptyList()
 
         /**
          * True only for TRACKED's own listing: untracking there removes the row immediately, since
-         * the tab's entire point is "what I'm tracking". Everywhere else (TRENDING, search results)
-         * untracking just flips the row's button — the show still belongs in that list regardless of
-         * whether it's tracked.
+         * the tab's entire point is "what I'm tracking". Everywhere else (TRENDING, search) it just
+         * flips the row's button — the show still belongs in that list either way.
          */
         var removeOnUntrack = false
 
@@ -456,16 +486,39 @@ class MainActivity : Activity() {
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
             val show = items[position]
+
+            // A ListView's children are laid out with AbsListView.LayoutParams, which has no
+            // margins — so the air between cards comes from a padded wrapper around each card
+            // rather than a margin on it.
+            val wrapper = FrameLayout(this@MainActivity).apply { setPadding(0, 0, 0, 10.dp) }
+
             val row = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, 16, 0, 16)
+                // A tracked show's card sits a touch warmer than the rest. State shouldn't rest
+                // entirely on one small pill at the far edge of the row — carrying it in the surface
+                // means you can see what you follow while scanning, without reading a single word.
+                background = AppTheme.tappable(
+                    if (show.tracked) {
+                        AppTheme.liftedSurface(0xFF272017.toInt(), 0xFF1B1713.toInt(), 20.dp.toFloat())
+                    } else {
+                        AppTheme.liftedSurface(AppTheme.SurfaceRaised, AppTheme.Surface, 20.dp.toFloat())
+                    }
+                )
+                setPadding(12.dp, 12.dp, 14.dp, 12.dp)
+                // The whole card opens IMDb; the track button below consumes its own taps.
+                setOnClickListener {
+                    resolveImdbIdThenOpen(show.title, null, show.imdbId, onUnresolved = ::showImdbUnavailable)
+                }
             }
 
             val poster = ImageView(this@MainActivity).apply {
-                layoutParams = LinearLayout.LayoutParams(96, 132)
-                setBackgroundColor(Color.parseColor("#262626"))
+                // 2:3, the standard poster ratio — key art is the most valuable thing in the row,
+                // so it gets real presence rather than a thumbnail's worth.
+                layoutParams = LinearLayout.LayoutParams(60.dp, 90.dp)
+                background = AppTheme.liftedSurface(0xFF272220.toInt(), 0xFF171412.toInt(), 10.dp.toFloat())
                 scaleType = ImageView.ScaleType.CENTER_CROP
+                clipToRoundedRect(10.dp.toFloat())
             }
             row.addView(poster)
             loadPosterAsync(show, poster)
@@ -473,39 +526,36 @@ class MainActivity : Activity() {
             val textColumn = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    .apply { marginStart = 20 }
+                    .apply { marginStart = 14.dp }
             }
             textColumn.addView(TextView(this@MainActivity).apply {
-                text = show.title
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                // Same IMDb link as TODAY/Popular — tracked/trending/search rows already carry a
-                // known imdbId from TVMaze, so this is usually instant with no live lookup needed.
-                setOnClickListener {
-                    resolveImdbIdThenOpen(show.title, null, show.imdbId, onUnresolved = ::showImdbUnavailable)
-                }
+                text = "${show.status} · ${show.network}"
+                label(9.5f, AppTheme.TextMuted, tracking = 0.2f)
+                maxLines = 1
             })
             textColumn.addView(TextView(this@MainActivity).apply {
-                text = "${show.status} · ${show.network}"
-                setTextColor(Color.parseColor("#888888"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                text = show.title
+                display(17f)
+                maxLines = 2
+                setPadding(0, 4.dp, 0, 0)
             })
             row.addView(textColumn)
 
-            row.addView(Button(this@MainActivity).apply {
-                text = if (show.tracked) "− UNTRACK" else "+ TRACK"
-                setOnClickListener { toggleTrack(show, this) }
+            row.addView(pillButton(
+                text = if (show.tracked) "TRACKING" else "TRACK",
+                active = show.tracked,
+            ) { button -> toggleTrack(show, button) }.apply {
+                (layoutParams as? LinearLayout.LayoutParams)?.marginStart = 10.dp
             })
 
-            return row
+            wrapper.addView(row)
+            return wrapper
         }
 
         /**
-         * Loads through [PosterStore] — the same on-disk cache the widget uses — instead of a plain
-         * in-memory map scoped to this Activity instance. The in-memory map used to mean every poster
-         * reloaded from the network (and sat blank in the meantime) each time this screen was opened;
-         * a disk cache means a show whose poster was already fetched (by this screen or by a widget
-         * sync) never shows an empty poster again.
+         * Loads through [PosterStore] — the same on-disk cache the widget uses — so a poster fetched
+         * once never blanks out again on a later visit. An in-memory map scoped to this Activity
+         * (what this used to be) was thrown away every time the screen closed.
          */
         private fun loadPosterAsync(show: CatalogueShow, target: ImageView) {
             target.setImageDrawable(null)
@@ -515,13 +565,16 @@ class MainActivity : Activity() {
                     if (!PosterStore.has(this@MainActivity, key)) {
                         PosterStore.ensureCached(this@MainActivity, key, show.posterUrl)
                     }
-                    PosterStore.loadBitmaps(this@MainActivity, listOf(key))[key]
+                    PosterStore.loadBitmapsBlocking(this@MainActivity, listOf(key))[key]
                 }
-                if (bitmap != null) runOnUiThread { target.setImageBitmap(bitmap) }
+                if (bitmap != null) runOnUiThread {
+                    target.setImageBitmap(bitmap)
+                    target.enterSoftly()
+                }
             }.start()
         }
 
-        private fun toggleTrack(show: CatalogueShow, button: Button) {
+        private fun toggleTrack(show: CatalogueShow, button: TextView) {
             val nowTracked = !show.tracked
             if (nowTracked) {
                 TrackedShowsRepository.add(
@@ -538,34 +591,204 @@ class MainActivity : Activity() {
                 items.map { if (it.tvMazeId == show.tvMazeId) it.copy(tracked = nowTracked) else it }
             }
             notifyDataSetChanged()
-            button.text = if (nowTracked) "− UNTRACK" else "+ TRACK"
+            stylePill(button, text = if (nowTracked) "TRACKING" else "TRACK", active = nowTracked)
             AnticipatedSyncWorker.runOnce(this@MainActivity)
-            Toast.makeText(
-                this@MainActivity,
-                if (nowTracked) "Tracking ${show.title}" else "Stopped tracking ${show.title}",
-                Toast.LENGTH_SHORT,
-            ).show()
         }
     }
 
-    // -- View helpers ----------------------------------------------------------------------------
+    // -- Components ------------------------------------------------------------------------------
 
-    private fun centeredColumn() = LinearLayout(this).apply {
+    private fun screenRoot(centered: Boolean = false) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER
-        setBackgroundColor(Color.parseColor("#0B0B0B"))
-        setPadding(48, 48, 48, 48)
+        if (centered) gravity = Gravity.CENTER
+        background = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(AppTheme.BackgroundLift, AppTheme.Background, AppTheme.Background),
+        )
+        setPadding(24.dp, 30.dp, 24.dp, 0)
+        layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        )
     }
 
-    private fun label(text: String, sizeSp: Float, color: Int) = TextView(this).apply {
-        this.text = text
-        setTextColor(color)
-        gravity = Gravity.CENTER
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+    /** The search field: a soft capsule with a leading glyph, no underline, gold caret-adjacent hint. */
+    private fun searchField(input: EditText): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = AppTheme.surface(
+            color = AppTheme.Surface,
+            radius = 26.dp.toFloat(),
+            strokeColor = AppTheme.neutral(0.07f),
+        )
+        setPadding(18.dp, 12.dp, 18.dp, 12.dp)
         layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = 16 }
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = 22.dp }
+
+        addView(TextView(this@MainActivity).apply {
+            text = "⌕"
+            setTextColor(AppTheme.Accent)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            setPadding(0, 0, 12.dp, 0)
+        })
+        addView(input)
+    }
+
+    /**
+     * A segmented control: three labels over a rounded track, with a gold ember indicator that
+     * slides between them.
+     *
+     * Chosen over plain buttons (which look unstyled) and over underline tabs (which read as web
+     * navigation). A physical-feeling control with real motion is the single most "designed" element
+     * on the screen, and the slide is the one animation that carries actual meaning here — it shows
+     * where you came from and where you landed.
+     */
+    private fun segmentedControl(onSelect: (CatalogueTab) -> Unit): Segmented {
+        val tabs = CatalogueTab.entries
+        val inset = 4.dp
+
+        val indicator = View(this).apply {
+            background = AppTheme.liftedSurface(0xFF4A3A1C.toInt(), 0xFF2E2413.toInt(), 999f)
+        }
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+        val labelViews = tabs.map { tab ->
+            TextView(this).apply {
+                text = tab.label.uppercase()
+                label(11f, AppTheme.TextMuted, tracking = 0.16f, bold = true)
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+            }.also(labels::addView)
+        }
+
+        val track = FrameLayout(this).apply {
+            background = AppTheme.surface(AppTheme.Surface, 999f, AppTheme.neutral(0.06f))
+            addView(indicator, FrameLayout.LayoutParams(0, 0))
+            addView(labels)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 46.dp
+            ).apply { topMargin = 18.dp }
+        }
+
+        val segmented = Segmented(track, indicator, labelViews, tabs)
+        labelViews.forEachIndexed { index, view ->
+            view.setOnClickListener {
+                segmented.select(tabs[index])
+                onSelect(tabs[index])
+            }
+        }
+
+        // The indicator can only be sized once the track has a width, so its first placement waits
+        // for layout; after that, selection just animates translationX. Guarded on the measured
+        // width actually changing — re-assigning layoutParams unconditionally here would request a
+        // fresh layout on every layout pass, which is a loop.
+        track.addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
+            val width = right - left
+            val segmentWidth = if (width > 0) width / tabs.size else 0
+            if (segmentWidth <= 0 || segmentWidth == segmented.segmentWidth) return@addOnLayoutChangeListener
+            segmented.segmentWidth = segmentWidth
+            indicator.layoutParams = FrameLayout.LayoutParams(
+                segmentWidth - inset, track.height - inset * 2
+            ).apply { topMargin = inset; leftMargin = inset / 2 }
+            segmented.select(segmented.current, animate = false)
+        }
+        return segmented
+    }
+
+    /** Holds the segmented control's views so selection can move the indicator and recolour labels. */
+    private inner class Segmented(
+        val view: View,
+        private val indicator: View,
+        private val labels: List<TextView>,
+        private val tabs: List<CatalogueTab>,
+    ) {
+        var segmentWidth: Int = 0
+        var current: CatalogueTab = CatalogueTab.TRACKED
+            private set
+
+        fun select(tab: CatalogueTab, animate: Boolean = true) {
+            current = tab
+            val index = tabs.indexOf(tab).coerceAtLeast(0)
+            val target = (segmentWidth * index).toFloat()
+            if (animate && segmentWidth > 0) {
+                indicator.animate().translationX(target).setDuration(260L).start()
+            } else {
+                indicator.translationX = target
+            }
+            labels.forEachIndexed { i, view ->
+                view.setTextColor(if (i == index) AppTheme.Accent else AppTheme.TextMuted)
+            }
+        }
+    }
+
+    /** A compact outlined pill — the track/untrack and remove control. */
+    private fun pillButton(text: String, active: Boolean, onClick: (TextView) -> Unit): TextView =
+        TextView(this).apply {
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            stylePill(this, text, active)
+            setOnClickListener { onClick(this) }
+        }
+
+    /**
+     * Outlined rather than filled: posters are the colour in these rows, and three filled gold
+     * buttons down a list would fight them. The tracked state earns a tinted fill so the difference
+     * is unmistakable without being loud.
+     */
+    private fun stylePill(view: TextView, text: String, active: Boolean) {
+        view.text = text
+        view.label(
+            sizeSp = 10f,
+            color = if (active) AppTheme.Accent else AppTheme.TextSecondary,
+            tracking = 0.16f,
+            bold = true,
+        )
+        view.setPadding(14.dp, 9.dp, 14.dp, 9.dp)
+        view.background = AppTheme.tappable(
+            AppTheme.surface(
+                color = if (active) AppTheme.accent(0.12f) else Color.TRANSPARENT,
+                radius = 999f,
+                strokeColor = if (active) AppTheme.accent(0.45f) else AppTheme.neutral(0.16f),
+            )
+        )
+    }
+
+    private fun primaryButton(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
+        this.text = text.uppercase()
+        label(11f, AppTheme.Accent, tracking = 0.2f, bold = true)
+        gravity = Gravity.CENTER
+        setPadding(28.dp, 15.dp, 28.dp, 15.dp)
+        background = AppTheme.tappable(
+            AppTheme.surface(AppTheme.accent(0.10f), 999f, AppTheme.accent(0.42f))
+        )
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { gravity = Gravity.CENTER }
+        setOnClickListener { onClick() }
+    }
+
+    /** Empty states get a voice rather than a shrug — a serif line and one plain sentence under it. */
+    private fun emptyState(title: String, detail: String): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER_HORIZONTAL
+        setPadding(24.dp, 48.dp, 24.dp, 24.dp)
+        addView(TextView(this@MainActivity).apply {
+            this.text = title
+            display(20f, AppTheme.TextSecondary)
+            gravity = Gravity.CENTER
+        })
+        addView(TextView(this@MainActivity).apply {
+            this.text = detail
+            label(11.5f, AppTheme.TextMuted, tracking = 0.08f)
+            gravity = Gravity.CENTER
+            setPadding(0, 8.dp, 0, 0)
+        })
     }
 
     companion object {
@@ -574,6 +797,5 @@ class MainActivity : Activity() {
         const val EXTRA_IMDB_ID = "imdb_id"
         const val EXTRA_OPEN_CATALOGUE = "open_catalogue"
         private const val SEARCH_DEBOUNCE_MS = 300L
-        private val ACCENT = Color.parseColor("#D4AF37")
     }
 }

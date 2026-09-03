@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Today's rows. The old design flooded the whole row with a flat accent tint at 7% — legible, but
+  it read as a highlighter stripe. This instead warms the row from its leading edge and falls away
+  to the normal surface, so "today" is felt as a glow rather than announced as a fill.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="0"
+        android:startColor="#2A2115"
+        android:centerColor="#201A14"
+        android:endColor="#171310"
+        android:type="linear" />
+    <corners android:radius="18dp" />
+</shape>

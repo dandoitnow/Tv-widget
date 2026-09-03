@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The widget's own ground. A near-black *warm* gradient rather than a flat neutral black: a subtly
+  warm ground reads as considered, where pure #000 reads as "unstyled". The gradient is only a few
+  points of luminance top-to-bottom — enough to feel lit from above, never enough to notice as a
+  gradient.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#14110E"
+        android:centerColor="#0E0C0A"
+        android:endColor="#0A0908"
+        android:type="linear" />
+    <corners android:radius="28dp" />
+</shape>

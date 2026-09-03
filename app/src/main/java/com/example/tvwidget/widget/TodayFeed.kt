@@ -5,12 +5,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceModifier
 import androidx.glance.action.actionParametersOf
-import androidx.glance.action.clickable
 import androidx.glance.action.actionStartActivity
+import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
-import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
@@ -21,17 +20,18 @@ import androidx.glance.layout.padding
 import androidx.glance.layout.width
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
-import com.example.tvwidget.data.FavoriteEpisode
 import com.example.tvwidget.MainActivity
+import com.example.tvwidget.data.FavoriteEpisode
 import com.example.tvwidget.data.Release
 import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Tokens
 
 /**
- * The TODAY tab: the user's watchlist releases in one continuous chronological list — aired above,
- * today in the middle, scheduled below. No collapse toggle: whatever the launcher's `ListView`
- * remembers as the user's scroll offset is all the "resting position" a Glance widget can offer, so
- * the list is just left complete and in order rather than faking a jump-to-today.
+ * The TODAY tab: upcoming releases as a stack of soft cards.
+ *
+ * Aired rows are dropped upstream (see `TvWidget.WidgetContent`) so the list always starts at
+ * today's first release — Glance's `LazyColumn` has no scroll-to-index API, so the only way to
+ * guarantee landing on today is for nothing to be rendered above it.
  */
 @Composable
 fun TodayFeed(
@@ -50,12 +50,12 @@ fun TodayFeed(
                 posters = posters,
             )
         }
-        // Bottom padding so the last row can settle clear of the widget edge.
+        // Trailing air so the last card can settle clear of the widget's edge.
         item { Spacer(GlanceModifier.fillMaxWidth().height(Dimens.listRowHeight())) }
     }
 }
 
-/** One 46dp release row: poster, meta line, title, status column and star. */
+/** One release card: poster, meta line, title, the numeric column, and the star. */
 @Composable
 private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String, Bitmap>) {
     val dimmed = release.hasAired
@@ -67,27 +67,22 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
         if (release.isToday) Tokens.Accent else Tokens.TextTertiary,
         dimmed,
     )
+    val rowHeight = Dimens.listRowHeight()
 
-    Column(
-        modifier = GlanceModifier
-            .fillMaxWidth()
-            // Today's rows carry a full-row accent tint.
-            .background(if (release.isToday) Tokens.accent(0.07f) else Tokens.Background),
-    ) {
-        val rowHeight = Dimens.listRowHeight()
+    RowSurface(today = release.isToday) {
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .height(rowHeight - 1.dp)
+                .height(rowHeight)
                 .padding(horizontal = Tokens.RowPaddingHorizontal),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Poster(title = release.showTitle, posters = posters, dimmed = dimmed)
-            Spacer(GlanceModifier.width(8.dp))
+            Spacer(GlanceModifier.width(10.dp))
             Column(modifier = GlanceModifier.defaultWeight()) {
                 Text(
                     text = "${release.dayLabel} · ${release.airTime} · ${release.network}",
-                    style = Tokens.mono(Dimens.metaSize(), metaColor),
+                    style = Tokens.label(Dimens.metaSize(), metaColor),
                     maxLines = 1,
                 )
                 Text(
@@ -97,9 +92,8 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
                         Tokens.dim(Tokens.TextPrimary, dimmed),
                     ),
                     maxLines = 1,
-                    // Only the title itself opens IMDb (via MainActivity's pass-through — Glance
-                    // can't launch an arbitrary Intent directly) — the rest of the row does nothing
-                    // on tap, so a poster/meta tap can't be mistaken for the title's action.
+                    // Only the title opens IMDb (via MainActivity's pass-through — Glance can't
+                    // launch an arbitrary Intent) so a poster or meta tap can't be mistaken for it.
                     modifier = GlanceModifier.clickable(
                         actionStartActivity<MainActivity>(
                             actionParametersOf(
@@ -111,14 +105,14 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
                     ),
                 )
             }
-            Spacer(GlanceModifier.width(6.dp))
+            Spacer(GlanceModifier.width(8.dp))
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    // A future episode leads with a countdown instead of its episode number — once
-                    // it's still days away, "how long until it airs" is more useful at a glance than
-                    // S/E; today's and already-aired rows keep showing the episode code.
+                    // A future episode leads with its countdown instead of its episode number —
+                    // days-away is the more useful glance value while it's still ahead; today's and
+                    // aired rows keep the code.
                     text = if (release.dayOffset > 0) release.countdownLabel else release.episodeCode,
-                    style = Tokens.mono(
+                    style = Tokens.numeric(
                         Dimens.accentLabelSize(),
                         Tokens.dim(Tokens.TextPrimary, dimmed),
                         TextAlign.End,
@@ -127,14 +121,14 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
                 )
                 Text(
                     text = release.status.label,
-                    style = Tokens.mono(Dimens.statusSize(), statusColor, TextAlign.End),
+                    style = Tokens.label(Dimens.statusSize(), statusColor, TextAlign.End),
                     maxLines = 1,
                 )
             }
             StarToggle(
                 favorited = favorited,
                 dimmed = dimmed,
-                targetHeight = rowHeight - 1.dp,
+                targetHeight = rowHeight,
                 onClick = actionRunCallback<ToggleFavoriteAction>(
                     actionParametersOf(
                         ActionKeys.showTitle to release.showTitle,
@@ -144,6 +138,5 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
                 ),
             )
         }
-        Hairline()
     }
 }
