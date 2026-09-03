@@ -1,6 +1,7 @@
 package com.example.tvwidget.widget
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.glance.ColorFilter
 import androidx.glance.GlanceModifier
@@ -8,7 +9,6 @@ import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.action.Action
 import androidx.glance.action.actionParametersOf
-import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.background
@@ -22,65 +22,54 @@ import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.Text
-import com.example.tvwidget.MainActivity
 import com.example.tvwidget.R
 import com.example.tvwidget.data.Tab
 import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Tokens
 
 /**
- * The tab switcher: a 2x2 grid of full-width pills rather than a single cramped row, so each tab is
- * a large, easy-to-hit target. There is no trailing readout (the old `AUTO HH:MM` / `SAVED` text) —
- * it named a mechanism the user doesn't act on, so it just cost space.
- *
- * The fourth slot, CATALOGUE, isn't a tab at all — there's no browsable list or state to switch to,
- * just a button that opens the app straight into its search screen (`RemoteViews` can't host an
- * `EditText`, so real search has to live there). It's visually a pill like the other three so the
- * grid stays a grid, but it never highlights as "selected" since there's no CATALOGUE tab content.
+ * The tab switcher: three pills side by side, one row. Used to be a 2x2 grid when FAVORITES was a
+ * fourth top-level tab; now that it lives inside CATALOGUE as a sub-tab, three tabs fit comfortably
+ * in one row, and a single row leaves more vertical space for the actual content below it than the
+ * grid did. There is no trailing readout (the old `AUTO HH:MM` / `SAVED` text) — it named a mechanism
+ * the user doesn't act on, so it just cost space.
  *
  * @param todayCount number of watchlist releases dated today, shown in the first pill.
  */
 @Composable
 fun Header(selected: Tab, todayCount: Int) {
     Column {
-        Column(modifier = GlanceModifier.fillMaxWidth().padding(top = 7.dp, start = 10.dp, end = 10.dp, bottom = 6.dp)) {
-            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Pill(
-                    label = "$todayCount TODAY",
-                    selected = selected == Tab.TODAY,
-                    leading = { LiveDot() },
-                    modifier = GlanceModifier.defaultWeight(),
-                    onClick = actionRunCallback<SwitchTabAction>(actionParametersOf(ActionKeys.tab to Tab.TODAY.name)),
-                )
-                Spacer(GlanceModifier.width(6.dp))
-                Pill(
-                    label = "ANTICIPATED",
-                    selected = selected == Tab.ANTICIPATED,
-                    modifier = GlanceModifier.defaultWeight(),
-                    onClick = actionRunCallback<SwitchTabAction>(
-                        actionParametersOf(ActionKeys.tab to Tab.ANTICIPATED.name)
-                    ),
-                )
-            }
-            Spacer(GlanceModifier.height(6.dp))
-            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Pill(
-                    label = "FAVORITES",
-                    selected = selected == Tab.FAVORITES,
-                    leading = { StarGlyph() },
-                    modifier = GlanceModifier.defaultWeight(),
-                    onClick = actionRunCallback<SwitchTabAction>(
-                        actionParametersOf(ActionKeys.tab to Tab.FAVORITES.name)
-                    ),
-                )
-                Spacer(GlanceModifier.width(6.dp))
-                Pill(
-                    label = "CATALOGUE",
-                    selected = false,
-                    modifier = GlanceModifier.defaultWeight(),
-                    onClick = actionStartActivity<MainActivity>(actionParametersOf(ActionKeys.openSearch to true)),
-                )
-            }
+        Row(
+            modifier = GlanceModifier
+                .fillMaxWidth()
+                .padding(top = 7.dp, start = 10.dp, end = 10.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Pill(
+                label = "$todayCount TODAY",
+                selected = selected == Tab.TODAY,
+                leading = { LiveDot() },
+                modifier = GlanceModifier.defaultWeight(),
+                onClick = actionRunCallback<SwitchTabAction>(actionParametersOf(ActionKeys.tab to Tab.TODAY.name)),
+            )
+            Spacer(GlanceModifier.width(6.dp))
+            Pill(
+                label = "POPULAR",
+                selected = selected == Tab.ANTICIPATED,
+                modifier = GlanceModifier.defaultWeight(),
+                onClick = actionRunCallback<SwitchTabAction>(
+                    actionParametersOf(ActionKeys.tab to Tab.ANTICIPATED.name)
+                ),
+            )
+            Spacer(GlanceModifier.width(6.dp))
+            Pill(
+                label = "CATALOGUE",
+                selected = selected == Tab.CATALOGUE,
+                modifier = GlanceModifier.defaultWeight(),
+                onClick = actionRunCallback<SwitchTabAction>(
+                    actionParametersOf(ActionKeys.tab to Tab.CATALOGUE.name)
+                ),
+            )
         }
         Hairline(Tokens.white(0.07f))
     }
@@ -98,8 +87,6 @@ private fun Pill(
     val foreground = if (selected) Tokens.TextPrimary else Tokens.TextMuted
     Row(
         modifier = modifier
-            // Roughly double the previous pill's tap height (was ~15dp of padding + text); a bit
-            // taller again once the widget is resized past the roomy breakpoint.
             .height(Dimens.tabPillHeight())
             .cornerRadiusCompat(Tokens.RadiusPill)
             .background(background)
@@ -131,12 +118,13 @@ private fun LiveDot() {
     )
 }
 
+/** The star glyph used by CATALOGUE's FAVORITES sub-tab pill (see [CatalogueTab]). */
 @Composable
-private fun StarGlyph() {
+fun StarGlyph(size: Dp = Dimens.tabGlyphSize()) {
     Image(
         provider = ImageProvider(R.drawable.ic_star_filled),
         contentDescription = null,
         colorFilter = ColorFilter.tint(Tokens.provider(Tokens.Accent)),
-        modifier = GlanceModifier.size(Dimens.tabGlyphSize()),
+        modifier = GlanceModifier.size(size),
     )
 }

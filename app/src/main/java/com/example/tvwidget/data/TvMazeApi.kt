@@ -21,31 +21,77 @@ import java.util.concurrent.ConcurrentHashMap
  * Every call is wrapped by its caller in `runCatching`; a network failure here should degrade to
  * "nothing new to show", never crash a sync.
  *
- * [schedule] is short-TTL memoized: `AnticipatedSyncWorker.runOnce` fires on every track/untrack tap,
- * and without this, tracking three shows back-to-back would redo every already-tracked show's
- * episode lookup three times over, just because one show changed. A cache this process-lifetime-only
- * and this short only exists to collapse that kind of back-to-back re-triggering — it is not a
- * freshness/offline strategy.
+ * [browse] and [schedule] are short-TTL memoized: `AnticipatedSyncWorker.runOnce` fires on every
+ * track/untrack tap, and without this, tracking three shows back-to-back would redo the entire daily
+ * schedule fetch plus every already-tracked show's episode lookup, three times over, just because one
+ * show changed. A cache this process-lifetime-only and this short only exists to collapse that kind
+ * of back-to-back re-triggering — it is not a freshness/offline strategy.
  */
 object TvMazeApi {
 
     private const val TAG = "TvMazeApi"
     private const val BASE = "https://api.tvmaze.com"
     private const val SCHEDULE_TTL_MS = 15 * 60_000L
+    private const val BROWSE_TTL_MS = 10 * 60_000L
 
     data class EpisodeInfo(val airDate: LocalDate, val airTime: String, val code: String)
     data class ShowSchedule(val previous: EpisodeInfo?, val next: EpisodeInfo?)
 
     private val scheduleCache = ConcurrentHashMap<Int, Pair<Long, ShowSchedule>>()
 
-    /** Free-text search, used by the search screen in `MainActivity`. */
+    @Volatile
+    private var browseCache: Pair<Long, List<CatalogueShow>>? = null
+
+    /**
+     * Free-text search, used by the search screen in `MainActivity`. Results are re-ranked by
+     * TVMaze's own `weight` field (its internal popularity signal) rather than left in the API's
+     * default relevance order, so a query like "love island" surfaces the well-known original ahead
+     * of its many regional spin-offs and unrelated same-named shows.
+     */
     suspend fun search(query: String): List<CatalogueShow> = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(query, "UTF-8")
         val body = get("$BASE/search/shows?q=$encoded") ?: return@withContext emptyList()
         val results = JSONArray(body)
-        (0 until results.length()).mapNotNull { i ->
-            results.optJSONObject(i)?.optJSONObject("show")?.let(::toCatalogueShow)
+        (0 until results.length())
+            .mapNotNull { i -> results.optJSONObject(i)?.optJSONObject("show") }
+            .sortedByDescending { it.optInt("weight", 0) }
+            .map(::toCatalogueShow)
+    }
+
+    /**
+     * A browseable "all shows" slice for CATALOGUE's RECOMMENDED sub-tab: today's web/TV schedule,
+     * deduplicated by show. TVMaze has no dedicated "trending" endpoint, so the daily schedule is the
+     * closest keyless proxy for "shows people are currently watching".
+     *
+     * @throws java.io.IOException if both underlying requests failed, so the caller (whose
+     *   `runCatching` drives `AnticipatedSyncWorker`'s retry-and-preserve-old-data behavior) can tell
+     *   "the network is down" apart from "fetched fine, nothing is scheduled today" — [get] swallows
+     *   its own failures into a `null` body, so that distinction has to be made here.
+     */
+    suspend fun browse(limit: Int = 25): List<CatalogueShow> = withContext(Dispatchers.IO) {
+        browseCache?.let { (fetchedAt, cached) ->
+            if (System.currentTimeMillis() - fetchedAt < BROWSE_TTL_MS) return@withContext cached
         }
+        val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val webBody = get("$BASE/schedule/web?date=$today")
+        val tvBody = get("$BASE/schedule?date=$today")
+        if (webBody == null && tvBody == null) {
+            throw java.io.IOException("Both TVMaze schedule endpoints failed")
+        }
+        val shows = LinkedHashMap<Int, CatalogueShow>()
+        listOfNotNull(webBody, tvBody).forEach { body ->
+            val entries = JSONArray(body)
+            for (i in 0 until entries.length()) {
+                val entry = entries.optJSONObject(i) ?: continue
+                // Web schedule embeds the show under "_embedded.show"; TV schedule inlines it.
+                val showJson = entry.optJSONObject("show")
+                    ?: entry.optJSONObject("_embedded")?.optJSONObject("show")
+                    ?: continue
+                val show = toCatalogueShow(showJson)
+                shows.putIfAbsent(show.tvMazeId, show)
+            }
+        }
+        shows.values.take(limit).also { browseCache = System.currentTimeMillis() to it }
     }
 
     /**

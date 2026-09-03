@@ -19,6 +19,7 @@ object WidgetState {
     private val json = Json { ignoreUnknownKeys = true }
 
     val TAB = stringPreferencesKey("tab")
+    val CATALOGUE_SUB_TAB = stringPreferencesKey("catalogue_sub_tab")
     val FAVORITES = stringPreferencesKey("favorites")
     val REWATCH_LOG = stringPreferencesKey("rewatch_log")
     val OPEN_SHOW = stringPreferencesKey("open_show")
@@ -29,13 +30,21 @@ object WidgetState {
     /** TODAY rows built from the user's tracked shows (see [TrackedShowsRepository]); null until synced. */
     val TRACKED_RELEASES = stringPreferencesKey("tracked_releases")
 
+    /** CATALOGUE's RECOMMENDED sub-tab browse list, refreshed alongside ANTICIPATED. */
+    val RECOMMENDED = stringPreferencesKey("recommended")
+
     private val favoritesSerializer = ListSerializer(FavoriteEpisode.serializer())
     private val rewatchSerializer = MapSerializer(String.serializer(), ListSerializer(String.serializer()))
     private val anticipatedSerializer = ListSerializer(AnticipatedShow.serializer())
     private val releaseSerializer = ListSerializer(Release.serializer())
+    private val catalogueSerializer = ListSerializer(CatalogueShow.serializer())
 
     fun tab(prefs: Preferences): Tab =
         prefs[TAB]?.let { name -> Tab.entries.firstOrNull { it.name == name } } ?: Tab.TODAY
+
+    fun catalogueSubTab(prefs: Preferences): CatalogueSubTab =
+        prefs[CATALOGUE_SUB_TAB]?.let { name -> CatalogueSubTab.entries.firstOrNull { it.name == name } }
+            ?: CatalogueSubTab.FAVORITES
 
     fun favorites(prefs: Preferences): List<FavoriteEpisode> =
         decode(prefs[FAVORITES], favoritesSerializer) ?: SampleData.defaultFavorites()
@@ -54,6 +63,9 @@ object WidgetState {
         decode(prefs[TRACKED_RELEASES], releaseSerializer)?.takeIf { it.isNotEmpty() }
             ?: SampleData.releases()
 
+    fun recommended(prefs: Preferences): List<CatalogueShow> =
+        decode(prefs[RECOMMENDED], catalogueSerializer) ?: emptyList()
+
     fun openShow(prefs: Preferences): String? = prefs[OPEN_SHOW]?.ifEmpty { null }
 
     fun openRewatchLog(prefs: Preferences): String? = prefs[OPEN_REWATCH_LOG]?.ifEmpty { null }
@@ -67,6 +79,8 @@ object WidgetState {
     fun encodeAnticipated(value: List<AnticipatedShow>): String = json.encodeToString(anticipatedSerializer, value)
 
     fun encodeReleases(value: List<Release>): String = json.encodeToString(releaseSerializer, value)
+
+    fun encodeRecommended(value: List<CatalogueShow>): String = json.encodeToString(catalogueSerializer, value)
 
     /**
      * Groups favourites into shows in first-seen order, which is the order the FAVORITES tab lists

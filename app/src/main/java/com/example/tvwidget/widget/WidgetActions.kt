@@ -6,17 +6,26 @@ import androidx.glance.GlanceId
 import androidx.glance.action.ActionParameters
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.state.updateAppWidgetState
+import com.example.tvwidget.data.CatalogueSubTab
 import com.example.tvwidget.data.FavoriteEpisode
 import com.example.tvwidget.data.SampleData
 import com.example.tvwidget.data.Tab
+import com.example.tvwidget.data.TrackedShow
+import com.example.tvwidget.data.TrackedShowsRepository
 import com.example.tvwidget.data.WidgetState
+import com.example.tvwidget.work.AnticipatedSyncWorker
 
 /** Parameter keys shared by the widget's action callbacks. */
 object ActionKeys {
     val tab = ActionParameters.Key<String>("tab")
+    val catalogueSubTab = ActionParameters.Key<String>("catalogue_sub_tab")
     val showTitle = ActionParameters.Key<String>("show_title")
     val episodeCode = ActionParameters.Key<String>("episode_code")
     val episodeLabel = ActionParameters.Key<String>("episode_label")
+    val tvMazeId = ActionParameters.Key<Int>("tv_maze_id")
+    val network = ActionParameters.Key<String>("network")
+    val posterUrl = ActionParameters.Key<String>("poster_url")
+    val wasTracked = ActionParameters.Key<Boolean>("was_tracked")
     val openSearch = ActionParameters.Key<Boolean>("open_search")
 }
 
@@ -41,6 +50,58 @@ class SwitchTabAction : ActionCallback {
         mutate(context, glanceId) {
             this[WidgetState.TAB] = tab
         }
+    }
+}
+
+/** Switches CATALOGUE's FAVORITES/RECOMMENDED sub-tab. */
+class SwitchCatalogueSubTabAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        val subTab = parameters[ActionKeys.catalogueSubTab] ?: CatalogueSubTab.FAVORITES.name
+        mutate(context, glanceId) {
+            this[WidgetState.CATALOGUE_SUB_TAB] = subTab
+        }
+    }
+}
+
+/**
+ * Adds or removes a show from tracking, from a RECOMMENDED row. This updates the app-wide
+ * [TrackedShowsRepository] (the source of truth, since [com.example.tvwidget.MainActivity]'s search
+ * screen writes there too), flips the row's own state optimistically so the tap feels instant, and
+ * kicks off a background sync to pull real episode dates and poster art for the change.
+ */
+class ToggleTrackedAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        val id = parameters[ActionKeys.tvMazeId] ?: return
+        val title = parameters[ActionKeys.showTitle] ?: return
+        val network = parameters[ActionKeys.network].orEmpty()
+        val posterUrl = parameters[ActionKeys.posterUrl]?.ifEmpty { null }
+        val wasTracked = parameters[ActionKeys.wasTracked] ?: false
+
+        if (wasTracked) {
+            TrackedShowsRepository.remove(context, id)
+        } else {
+            TrackedShowsRepository.add(context, TrackedShow(id, title, network, posterUrl))
+        }
+
+        mutate(context, glanceId) {
+            val recommended = WidgetState.recommended(this).map { show ->
+                if (show.tvMazeId == id) show.copy(tracked = !wasTracked) else show
+            }
+            this[WidgetState.RECOMMENDED] = WidgetState.encodeRecommended(recommended)
+        }
+        AnticipatedSyncWorker.runOnce(context)
+    }
+}
+
+/**
+ * RECOMMENDED's empty-state tap target. A failed first sync used to leave the sub-tab stuck on
+ * "LOADING…" forever — WorkManager's own retry/backoff (see [AnticipatedSyncWorker.runOnce]) now
+ * recovers most of the time on its own, but this gives the user an immediate way to force another
+ * attempt rather than wait.
+ */
+class RetryRecommendedSyncAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        AnticipatedSyncWorker.runOnce(context)
     }
 }
 
