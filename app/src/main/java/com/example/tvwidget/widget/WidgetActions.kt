@@ -16,6 +16,7 @@ object ActionKeys {
     val showTitle = ActionParameters.Key<String>("show_title")
     val episodeCode = ActionParameters.Key<String>("episode_code")
     val episodeLabel = ActionParameters.Key<String>("episode_label")
+    val imdbId = ActionParameters.Key<String>("imdb_id")
     val openCatalogue = ActionParameters.Key<Boolean>("open_catalogue")
 }
 

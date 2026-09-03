@@ -39,6 +39,8 @@ data class Release(
     val airTime: String,
     val network: String,
     val status: ReleaseStatus,
+    /** The show's IMDb id (`tt1234567`), when TVMaze has one on file. Null falls back to a search. */
+    val imdbId: String? = null,
 ) {
     val isToday: Boolean get() = dayOffset == 0
     val hasAired: Boolean get() = dayOffset < 0
@@ -94,7 +96,8 @@ data class FavoriteShow(
 
 /**
  * One TVMaze show shown in [com.example.tvwidget.MainActivity]'s Catalogue screen — a search hit, a
- * tracked-list entry, or a RECOMMENDED row (today's trending shows via [TvMazeApi.browse]).
+ * tracked-list entry, or a TRENDING row (today's popular currently-running shows via
+ * [TvMazeApi.browse]).
  */
 @Serializable
 data class CatalogueShow(
@@ -104,6 +107,7 @@ data class CatalogueShow(
     val status: String,
     val posterUrl: String?,
     val tracked: Boolean,
+    val imdbId: String? = null,
 )
 
 /**
@@ -117,4 +121,5 @@ data class TrackedShow(
     val title: String,
     val network: String,
     val posterUrl: String?,
+    val imdbId: String? = null,
 )

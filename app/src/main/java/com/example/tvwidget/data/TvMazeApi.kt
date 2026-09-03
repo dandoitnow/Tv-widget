@@ -35,7 +35,7 @@ object TvMazeApi {
     private const val BROWSE_TTL_MS = 10 * 60_000L
 
     data class EpisodeInfo(val airDate: LocalDate, val airTime: String, val code: String)
-    data class ShowSchedule(val previous: EpisodeInfo?, val next: EpisodeInfo?)
+    data class ShowSchedule(val previous: EpisodeInfo?, val next: EpisodeInfo?, val imdbId: String? = null)
 
     private val scheduleCache = ConcurrentHashMap<Int, Pair<Long, ShowSchedule>>()
 
@@ -59,9 +59,11 @@ object TvMazeApi {
     }
 
     /**
-     * A browseable "all shows" slice for CATALOGUE's RECOMMENDED sub-tab: today's web/TV schedule,
-     * deduplicated by show. TVMaze has no dedicated "trending" endpoint, so the daily schedule is the
-     * closest keyless proxy for "shows people are currently watching".
+     * A "trending" slice for CATALOGUE's TRENDING tab. TVMaze has no dedicated trending endpoint, so
+     * this approximates one: today's web/TV schedule (i.e. shows actually airing something right
+     * now, not TVMaze's full multi-thousand-show index) ranked by its own `weight` field — the same
+     * popularity signal [search] re-ranks by — and truncated to [limit]. "Currently running" plus
+     * "popular" together is a reasonable proxy for trending without a real trending API to call.
      *
      * @throws java.io.IOException if both underlying requests failed, so the caller (whose
      *   `runCatching` drives `AnticipatedSyncWorker`'s retry-and-preserve-old-data behavior) can tell
@@ -78,7 +80,7 @@ object TvMazeApi {
         if (webBody == null && tvBody == null) {
             throw java.io.IOException("Both TVMaze schedule endpoints failed")
         }
-        val shows = LinkedHashMap<Int, CatalogueShow>()
+        val shows = LinkedHashMap<Int, JSONObject>()
         listOfNotNull(webBody, tvBody).forEach { body ->
             val entries = JSONArray(body)
             for (i in 0 until entries.length()) {
@@ -87,11 +89,14 @@ object TvMazeApi {
                 val showJson = entry.optJSONObject("show")
                     ?: entry.optJSONObject("_embedded")?.optJSONObject("show")
                     ?: continue
-                val show = toCatalogueShow(showJson)
-                shows.putIfAbsent(show.tvMazeId, show)
+                shows.putIfAbsent(showJson.optInt("id"), showJson)
             }
         }
-        shows.values.take(limit).also { browseCache = System.currentTimeMillis() to it }
+        shows.values
+            .sortedByDescending { it.optInt("weight", 0) }
+            .take(limit)
+            .map(::toCatalogueShow)
+            .also { browseCache = System.currentTimeMillis() to it }
     }
 
     /**
@@ -127,12 +132,19 @@ object TvMazeApi {
         // for the next 15 minutes.
         val body = get("$BASE/shows/$tvMazeId?embed[]=previousepisode&embed[]=nextepisode")
             ?: return@withContext ShowSchedule(null, null)
-        val embedded = JSONObject(body).optJSONObject("_embedded")
+        // The show's own IMDb id (externals.imdb) rides along on this same response for free — no
+        // extra request needed to give a tracked show's TODAY rows a direct IMDb link.
+        val json = JSONObject(body)
+        val embedded = json.optJSONObject("_embedded")
         ShowSchedule(
             previous = embedded?.optJSONObject("previousepisode")?.let(::toEpisodeInfo),
             next = embedded?.optJSONObject("nextepisode")?.let(::toEpisodeInfo),
+            imdbId = imdbIdFrom(json),
         ).also { scheduleCache[tvMazeId] = System.currentTimeMillis() to it }
     }
+
+    private fun imdbIdFrom(json: JSONObject): String? =
+        json.optJSONObject("externals")?.optString("imdb")?.takeIf { it.isNotBlank() && it != "null" }
 
     private fun toCatalogueShow(json: JSONObject): CatalogueShow {
         val network = json.optJSONObject("network")?.optString("name")
@@ -145,6 +157,7 @@ object TvMazeApi {
             status = json.optString("status", "UNKNOWN").uppercase(java.util.Locale.US),
             posterUrl = json.optJSONObject("image")?.optString("medium")?.takeIf { it.isNotBlank() },
             tracked = false,
+            imdbId = imdbIdFrom(json),
         )
     }
 

@@ -82,6 +82,14 @@ class AnticipatedSyncWorker(
         return tracked.flatMap { show ->
             val schedule = runCatching { TvMazeApi.schedule(show.tvMazeId) }
                 .getOrElse { TvMazeApi.ShowSchedule(null, null) }
+
+            // Backfills shows tracked before TrackedShow carried an imdbId — without this, an
+            // already-tracked show would need to be untracked and re-tracked to ever get one.
+            if (show.imdbId == null && schedule.imdbId != null) {
+                TrackedShowsRepository.updateImdbId(applicationContext, show.tvMazeId, schedule.imdbId)
+            }
+            val imdbId = show.imdbId ?: schedule.imdbId
+
             listOfNotNull(schedule.previous, schedule.next).map { episode ->
                 val offset = java.time.temporal.ChronoUnit.DAYS.between(today, episode.airDate).toInt()
                 Release(
@@ -99,6 +107,7 @@ class AnticipatedSyncWorker(
                         offset == 0 -> ReleaseStatus.AIRS_TONIGHT
                         else -> ReleaseStatus.SCHEDULED
                     },
+                    imdbId = imdbId,
                 )
             }
         }.sortedWith(compareBy({ it.dayOffset }, { it.airTime }))

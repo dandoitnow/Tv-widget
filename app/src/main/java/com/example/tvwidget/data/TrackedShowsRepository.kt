@@ -42,6 +42,17 @@ object TrackedShowsRepository {
         save(context, list(context).filterNot { it.tvMazeId == tvMazeId })
     }
 
+    /**
+     * Backfills a show's IMDb id after the fact — [AnticipatedSyncWorker] calls this when a sync's
+     * episode lookup turns up an id for a show tracked before [TrackedShow.imdbId] existed, so
+     * already-tracked shows get a working IMDb link without needing to be re-tracked.
+     */
+    fun updateImdbId(context: Context, tvMazeId: Int, imdbId: String) {
+        val current = list(context)
+        if (current.none { it.tvMazeId == tvMazeId && it.imdbId != imdbId }) return
+        save(context, current.map { if (it.tvMazeId == tvMazeId) it.copy(imdbId = imdbId) else it })
+    }
+
     private fun save(context: Context, shows: List<TrackedShow>) {
         prefs(context).edit()
             .putString(KEY_TRACKED, json.encodeToString(serializer, shows))
