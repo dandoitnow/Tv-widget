@@ -1,9 +1,11 @@
 package com.example.tvwidget
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -47,11 +49,11 @@ import kotlinx.coroutines.runBlocking
 class MainActivity : Activity() {
 
     private lateinit var resultsAdapter: ResultsAdapter
-    private var selectedCatalogueTab = CatalogueTab.FAVORITES
+    private var selectedCatalogueTab = CatalogueTab.TRACKED
 
     /**
-     * RECOMMENDED's tracked-shows working set for this window only. Seeded once from
-     * [TrackedShowsRepository] the first time RECOMMENDED is shown; after that, tracking or
+     * TRACKED's working set for this window only. Seeded once from [TrackedShowsRepository] the
+     * first time TRACKED is shown; after that, tracking or
      * untracking a show updates this list in place — untracking flips a show's button back to
      * "+ TRACK" without removing the row, so it stays visible until this window is closed. A fresh
      * [MainActivity] instance (opening the app again) reseeds from the repository, which is the only
@@ -60,7 +62,7 @@ class MainActivity : Activity() {
     private val sessionTrackedShows = mutableListOf<CatalogueShow>()
     private var sessionTrackedShowsSeeded = false
 
-    private enum class CatalogueTab { FAVORITES, RECOMMENDED }
+    private enum class CatalogueTab { TRACKED, FAVORITES }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,9 +73,21 @@ class MainActivity : Activity() {
 
         when {
             openCatalogue -> setContentView(buildCatalogueScreen())
-            show != null -> setContentView(buildDeepLinkScreen(show, episode))
+            // Tapping a TODAY row's title is meant to open that episode's IMDb page — Glance's
+            // actionStartActivity only launches a typed Activity, not an arbitrary Intent, so the
+            // widget starts this Activity with the show/episode extras and this is the pass-through
+            // that actually fires the ACTION_VIEW intent. Falls back to the old placeholder screen
+            // only if nothing on the device can handle it (no browser/IMDb app at all).
+            show != null -> if (openImdbSearch(show, episode)) finish() else setContentView(buildDeepLinkScreen(show, episode))
             else -> setContentView(buildHomeScreen())
         }
+    }
+
+    /** Opens an IMDb search for the show + episode code; returns false if nothing could handle it. */
+    private fun openImdbSearch(show: String, episode: String?): Boolean {
+        val query = listOfNotNull(show, episode).joinToString(" ")
+        val url = "https://www.imdb.com/find/?q=" + Uri.encode(query)
+        return runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
     }
 
     // -- Screens -------------------------------------------------------------------------------
@@ -103,10 +117,11 @@ class MainActivity : Activity() {
     }
 
     /**
-     * CATALOGUE: a search field, and two tabs underneath it — FAVORITES (favorited episodes, read
-     * from and written back to the widget's own Glance state) and RECOMMENDED (a TVMaze-trending
-     * browse list with one-tap track/untrack). Typing 2+ characters into the search field covers
-     * whichever tab is showing with search results; clearing it back out restores that tab.
+     * CATALOGUE: a search field, and two tabs underneath it — TRACKED (today's trending shows via
+     * TVMaze, tracked ones pinned first, with one-tap track/untrack) and FAVORITES (favorited
+     * episodes, read from and written back to the widget's own Glance state). Typing 2+ characters
+     * into the search field covers whichever tab is showing with search results; clearing it back
+     * out restores that tab.
      */
     private fun buildCatalogueScreen(): View {
         val root = LinearLayout(this).apply {
@@ -144,16 +159,16 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = 16 }
         }
+        val trackedTabButton = Button(this).apply {
+            text = "TRACKED"
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
         val favoritesTabButton = Button(this).apply {
             text = "FAVORITES"
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val recommendedTabButton = Button(this).apply {
-            text = "RECOMMENDED"
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
+        tabRow.addView(trackedTabButton)
         tabRow.addView(favoritesTabButton)
-        tabRow.addView(recommendedTabButton)
         root.addView(tabRow)
 
         val favoritesContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -166,47 +181,47 @@ class MainActivity : Activity() {
         root.addView(favoritesScroll)
 
         resultsAdapter = ResultsAdapter()
-        val recommendedList = ListView(this).apply {
+        val catalogueList = ListView(this).apply {
             adapter = resultsAdapter
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             ).apply { topMargin = 12 }
         }
-        root.addView(recommendedList)
+        root.addView(catalogueList)
 
         fun highlightTabs() {
             val selectedColor = Color.parseColor("#F2C81E")
             val unselectedColor = Color.parseColor("#444444")
+            trackedTabButton.setBackgroundColor(
+                if (selectedCatalogueTab == CatalogueTab.TRACKED) selectedColor else unselectedColor
+            )
             favoritesTabButton.setBackgroundColor(
                 if (selectedCatalogueTab == CatalogueTab.FAVORITES) selectedColor else unselectedColor
-            )
-            recommendedTabButton.setBackgroundColor(
-                if (selectedCatalogueTab == CatalogueTab.RECOMMENDED) selectedColor else unselectedColor
             )
         }
 
         fun showCurrentTab() {
             highlightTabs()
             when (selectedCatalogueTab) {
+                CatalogueTab.TRACKED -> {
+                    favoritesScroll.visibility = View.GONE
+                    catalogueList.visibility = View.VISIBLE
+                    loadTrackedAsync(status)
+                }
                 CatalogueTab.FAVORITES -> {
                     favoritesScroll.visibility = View.VISIBLE
-                    recommendedList.visibility = View.GONE
+                    catalogueList.visibility = View.GONE
                     loadFavoritesAsync(status, favoritesContainer)
-                }
-                CatalogueTab.RECOMMENDED -> {
-                    favoritesScroll.visibility = View.GONE
-                    recommendedList.visibility = View.VISIBLE
-                    loadRecommendedAsync(status)
                 }
             }
         }
 
-        favoritesTabButton.setOnClickListener {
-            selectedCatalogueTab = CatalogueTab.FAVORITES
+        trackedTabButton.setOnClickListener {
+            selectedCatalogueTab = CatalogueTab.TRACKED
             if (input.text.length < 2) showCurrentTab() else highlightTabs()
         }
-        recommendedTabButton.setOnClickListener {
-            selectedCatalogueTab = CatalogueTab.RECOMMENDED
+        favoritesTabButton.setOnClickListener {
+            selectedCatalogueTab = CatalogueTab.FAVORITES
             if (input.text.length < 2) showCurrentTab() else highlightTabs()
         }
 
@@ -230,7 +245,7 @@ class MainActivity : Activity() {
                     return
                 }
                 favoritesScroll.visibility = View.GONE
-                recommendedList.visibility = View.VISIBLE
+                catalogueList.visibility = View.VISIBLE
                 status.text = "Searching…"
                 val runnable = Runnable {
                     Thread {
@@ -334,7 +349,7 @@ class MainActivity : Activity() {
     }
 
     /** Populates the shared results list with today's trending shows, tracked ones pinned first. */
-    private fun loadRecommendedAsync(status: TextView) {
+    private fun loadTrackedAsync(status: TextView) {
         if (!sessionTrackedShowsSeeded) {
             sessionTrackedShows += TrackedShowsRepository.list(this).map { show ->
                 CatalogueShow(show.tvMazeId, show.title, show.network, "TRACKING", show.posterUrl, tracked = true)

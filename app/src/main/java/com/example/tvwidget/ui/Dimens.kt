@@ -53,7 +53,7 @@ object Dimens {
 
     @Composable
     fun tabPillHeight(): Dp = when (tier()) {
-        Tier.COMPACT -> 22.dp
+        Tier.COMPACT -> 26.dp
         Tier.ROOMY -> 60.dp
         Tier.XL -> 74.dp
     }
@@ -61,7 +61,7 @@ object Dimens {
     /** Tab labels (TODAY / ANTICIPATED / ...) and the header's leading glyphs. */
     @Composable
     fun tabLabelSize(): Float = when (tier()) {
-        Tier.COMPACT -> 8f
+        Tier.COMPACT -> 13f
         Tier.ROOMY -> 18f
         Tier.XL -> 22f
     }
@@ -125,7 +125,7 @@ object Dimens {
     /** The header tab pills' leading glyphs: the TODAY live dot and the FAVORITES star. */
     @Composable
     fun tabGlyphSize(): Dp = when (tier()) {
-        Tier.COMPACT -> 6.dp
+        Tier.COMPACT -> 8.dp
         Tier.ROOMY -> 12.dp
         Tier.XL -> 15.dp
     }
