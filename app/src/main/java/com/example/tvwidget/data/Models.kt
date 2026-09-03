@@ -3,15 +3,13 @@ package com.example.tvwidget.data
 import kotlinx.serialization.Serializable
 
 /**
- * Which top-level tab the widget is showing. Persisted by [name].
+ * Which tab the widget is showing. Persisted by [name].
  *
- * There are three, side by side, now that FAVORITES moved inside CATALOGUE as one of its two
- * [CatalogueSubTab]s (the other being RECOMMENDED) — see [com.example.tvwidget.widget.CatalogueTab].
+ * CATALOGUE isn't one of these — there's no widget-side content for it, just a header button that
+ * opens the app straight into its Catalogue screen (Favorites + Recommended + search, all native
+ * Android views — see [com.example.tvwidget.MainActivity]).
  */
-enum class Tab { TODAY, ANTICIPATED, CATALOGUE }
-
-/** Which of CATALOGUE's two sub-views is showing. Persisted by [name]. */
-enum class CatalogueSubTab { FAVORITES, RECOMMENDED }
+enum class Tab { TODAY, ANTICIPATED }
 
 /** Status shown in the right column of a TODAY row. */
 enum class ReleaseStatus(val label: String) {
@@ -83,7 +81,7 @@ data class FavoriteEpisode(
     val label: String,
 )
 
-/** A favourite show plus the episodes saved under it, as rendered by the FAVORITES tab. */
+/** A favourite show plus the episodes saved under it, as rendered by the app's Favorites view. */
 data class FavoriteShow(
     val title: String,
     val episodes: List<FavoriteEpisode>,
@@ -95,10 +93,8 @@ data class FavoriteShow(
 }
 
 /**
- * One TVMaze show — a search hit or tracked-list entry in [com.example.tvwidget.MainActivity]'s
- * search screen, or a row in CATALOGUE's RECOMMENDED sub-tab. [tracked] is set by the sync worker
- * from [TrackedShowsRepository] before a RECOMMENDED row is drawn, so the widget never has to
- * cross-reference the two lists at render time.
+ * One TVMaze show shown in [com.example.tvwidget.MainActivity]'s Catalogue screen — a search hit, a
+ * tracked-list entry, or a RECOMMENDED row (today's trending shows via [TvMazeApi.browse]).
  */
 @Serializable
 data class CatalogueShow(
