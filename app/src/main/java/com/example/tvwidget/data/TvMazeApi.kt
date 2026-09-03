@@ -100,20 +100,31 @@ object TvMazeApi {
     }
 
     /**
-     * Poster lookup for shows we only know by title (the bundled demo content) — `singlesearch`
-     * returns TVMaze's best guess even when nothing actually matches, so a loose or generic title
-     * ("Silo", "Wednesday") can come back with an unrelated show's art. To avoid caching the wrong
-     * poster, the candidate's own name is checked against [title] (case/punctuation-insensitive)
-     * before its image is accepted; anything that doesn't match closely enough returns `null`
-     * rather than a confident-looking wrong answer.
+     * Poster lookup for shows we only know by title (the bundled demo content) — see
+     * [singleSearchVerified] for why the candidate's name is checked before trusting its data.
      */
-    suspend fun posterFor(title: String): String? = withContext(Dispatchers.IO) {
+    suspend fun posterFor(title: String): String? =
+        singleSearchVerified(title)?.optJSONObject("image")?.optString("medium")?.takeIf { it.isNotBlank() }
+
+    /**
+     * IMDb id lookup for a show we only know by title — the live fallback `MainActivity` uses when a
+     * TODAY row's title is tapped before a sync has ever backfilled [Release.imdbId] for it. See
+     * [singleSearchVerified] for why the candidate's name is checked before trusting its data.
+     */
+    suspend fun imdbIdFor(title: String): String? = singleSearchVerified(title)?.let(::imdbIdFrom)
+
+    /**
+     * `singlesearch` returns TVMaze's best guess even when nothing actually matches, so a loose or
+     * generic title ("Silo", "Wednesday") can come back with an unrelated show. The candidate's own
+     * name is checked against [title] (case/punctuation-insensitive) before its data is trusted;
+     * anything that doesn't match closely enough returns `null` rather than a confident-looking wrong
+     * answer.
+     */
+    private suspend fun singleSearchVerified(title: String): JSONObject? = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(title, "UTF-8")
         val body = get("$BASE/singlesearch/shows?q=$encoded") ?: return@withContext null
         val json = runCatching { JSONObject(body) }.getOrNull() ?: return@withContext null
-        val candidateName = json.optString("name")
-        if (!namesMatch(title, candidateName)) return@withContext null
-        json.optJSONObject("image")?.optString("medium")?.takeIf { it.isNotBlank() }
+        json.takeIf { namesMatch(title, it.optString("name")) }
     }
 
     /** Loose equality: case, punctuation, and whitespace differences don't count as a mismatch. */
