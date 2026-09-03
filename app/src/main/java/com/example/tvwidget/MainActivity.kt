@@ -1,7 +1,6 @@
 package com.example.tvwidget
 
 import android.app.Activity
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -18,28 +17,41 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.glance.appwidget.state.getAppWidgetState
+import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.glance.appwidget.updateAll
+import androidx.glance.state.PreferencesGlanceStateDefinition
 import com.example.tvwidget.data.CatalogueShow
+import com.example.tvwidget.data.FavoriteShow
 import com.example.tvwidget.data.TrackedShow
 import com.example.tvwidget.data.TrackedShowsRepository
 import com.example.tvwidget.data.TvMazeApi
+import com.example.tvwidget.data.WidgetState
+import com.example.tvwidget.widget.TvWidget
 import com.example.tvwidget.work.AnticipatedSyncWorker
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.runBlocking
 
 /**
  * Host activity. The product is the home-screen widget; this screen exists so the app is
- * launchable, so a whole-row tap in the TODAY feed has somewhere to land, and — since a home-screen
- * widget cannot host a text field — so CATALOGUE's free-text search has somewhere to run.
+ * launchable, so a whole-row tap in the TODAY feed has somewhere to land, and so CATALOGUE — search,
+ * Favorites, and Recommended — has somewhere to run at all. None of that can live in the widget: a
+ * `RemoteViews` has no `EditText` for real search, and rendering Favorites' full detail plus a
+ * browseable Recommended list there was more chrome than a home-screen widget can reasonably hold.
  */
 class MainActivity : Activity() {
 
     private lateinit var resultsAdapter: ResultsAdapter
+    private var selectedCatalogueTab = CatalogueTab.FAVORITES
 
     /**
-     * The default listing's working set for this window only. Seeded once from
-     * [TrackedShowsRepository] the first time the search screen is shown; after that, tracking or
+     * RECOMMENDED's tracked-shows working set for this window only. Seeded once from
+     * [TrackedShowsRepository] the first time RECOMMENDED is shown; after that, tracking or
      * untracking a show updates this list in place — untracking flips a show's button back to
      * "+ TRACK" without removing the row, so it stays visible until this window is closed. A fresh
      * [MainActivity] instance (opening the app again) reseeds from the repository, which is the only
@@ -48,15 +60,17 @@ class MainActivity : Activity() {
     private val sessionTrackedShows = mutableListOf<CatalogueShow>()
     private var sessionTrackedShowsSeeded = false
 
+    private enum class CatalogueTab { FAVORITES, RECOMMENDED }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val show = intent?.getStringExtra(EXTRA_SHOW_TITLE)
         val episode = intent?.getStringExtra(EXTRA_EPISODE_CODE)
-        val openSearch = intent?.getBooleanExtra(EXTRA_OPEN_SEARCH, false) ?: false
+        val openCatalogue = intent?.getBooleanExtra(EXTRA_OPEN_CATALOGUE, false) ?: false
 
         when {
-            openSearch -> setContentView(buildSearchScreen())
+            openCatalogue -> setContentView(buildCatalogueScreen())
             show != null -> setContentView(buildDeepLinkScreen(show, episode))
             else -> setContentView(buildHomeScreen())
         }
@@ -77,8 +91,8 @@ class MainActivity : Activity() {
         root.addView(label(text = "Add the 5x2 \"TV Releases\" widget to your home screen.", sizeSp = 13f, color = ACCENT))
         root.addView(
             Button(this).apply {
-                text = "SEARCH ALL SHOWS"
-                setOnClickListener { setContentView(buildSearchScreen()) }
+                text = "OPEN CATALOGUE"
+                setOnClickListener { setContentView(buildCatalogueScreen()) }
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -88,20 +102,24 @@ class MainActivity : Activity() {
         return root
     }
 
-    /** CATALOGUE's search: the reason this Activity exists at all — widgets cannot host `EditText`. */
-    private fun buildSearchScreen(): View {
+    /**
+     * CATALOGUE: a search field, and two tabs underneath it — FAVORITES (favorited episodes, read
+     * from and written back to the widget's own Glance state) and RECOMMENDED (a TVMaze-trending
+     * browse list with one-tap track/untrack). Typing 2+ characters into the search field covers
+     * whichever tab is showing with search results; clearing it back out restores that tab.
+     */
+    private fun buildCatalogueScreen(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#0B0B0B"))
             setPadding(32, 64, 32, 32)
         }
 
-        val title = TextView(this).apply {
-            text = "SEARCH SHOWS"
+        root.addView(TextView(this).apply {
+            text = "CATALOGUE"
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-        }
-        root.addView(title)
+        })
 
         val input = EditText(this).apply {
             hint = "Show title…"
@@ -120,19 +138,79 @@ class MainActivity : Activity() {
         }
         root.addView(status)
 
+        val tabRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 16 }
+        }
+        val favoritesTabButton = Button(this).apply {
+            text = "FAVORITES"
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val recommendedTabButton = Button(this).apply {
+            text = "RECOMMENDED"
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        tabRow.addView(favoritesTabButton)
+        tabRow.addView(recommendedTabButton)
+        root.addView(tabRow)
+
+        val favoritesContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val favoritesScroll = ScrollView(this).apply {
+            addView(favoritesContainer)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            ).apply { topMargin = 12 }
+        }
+        root.addView(favoritesScroll)
+
         resultsAdapter = ResultsAdapter()
-        val list = ListView(this).apply {
+        val recommendedList = ListView(this).apply {
             adapter = resultsAdapter
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             ).apply { topMargin = 12 }
         }
-        root.addView(list)
+        root.addView(recommendedList)
 
-        // Tracked shows are the default listing — search results cover them once the user types,
-        // and clearing the field brings them back. Same list either way, so untracking a show found
-        // by typing is still reachable from here without leaving the screen.
-        showTrackedList(status)
+        fun highlightTabs() {
+            val selectedColor = Color.parseColor("#F2C81E")
+            val unselectedColor = Color.parseColor("#444444")
+            favoritesTabButton.setBackgroundColor(
+                if (selectedCatalogueTab == CatalogueTab.FAVORITES) selectedColor else unselectedColor
+            )
+            recommendedTabButton.setBackgroundColor(
+                if (selectedCatalogueTab == CatalogueTab.RECOMMENDED) selectedColor else unselectedColor
+            )
+        }
+
+        fun showCurrentTab() {
+            highlightTabs()
+            when (selectedCatalogueTab) {
+                CatalogueTab.FAVORITES -> {
+                    favoritesScroll.visibility = View.VISIBLE
+                    recommendedList.visibility = View.GONE
+                    loadFavoritesAsync(status, favoritesContainer)
+                }
+                CatalogueTab.RECOMMENDED -> {
+                    favoritesScroll.visibility = View.GONE
+                    recommendedList.visibility = View.VISIBLE
+                    loadRecommendedAsync(status)
+                }
+            }
+        }
+
+        favoritesTabButton.setOnClickListener {
+            selectedCatalogueTab = CatalogueTab.FAVORITES
+            if (input.text.length < 2) showCurrentTab() else highlightTabs()
+        }
+        recommendedTabButton.setOnClickListener {
+            selectedCatalogueTab = CatalogueTab.RECOMMENDED
+            if (input.text.length < 2) showCurrentTab() else highlightTabs()
+        }
+
+        showCurrentTab()
 
         var searchToken = 0
         val debounceHandler = android.os.Handler(mainLooper)
@@ -148,13 +226,15 @@ class MainActivity : Activity() {
                 // fast typist never triggers one network request per character.
                 pendingSearch?.let(debounceHandler::removeCallbacks)
                 if (query.length < 2) {
-                    showTrackedList(status)
+                    showCurrentTab()
                     return
                 }
+                favoritesScroll.visibility = View.GONE
+                recommendedList.visibility = View.VISIBLE
                 status.text = "Searching…"
                 val runnable = Runnable {
                     Thread {
-                        val results = runCatching { kotlinx.coroutines.runBlocking { TvMazeApi.search(query) } }
+                        val results = runCatching { runBlocking { TvMazeApi.search(query) } }
                             .getOrDefault(emptyList())
                             .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
                         runOnUiThread {
@@ -172,27 +252,111 @@ class MainActivity : Activity() {
         return root
     }
 
-    /** Populates the results list with [sessionTrackedShows], seeding it from disk on first call. */
-    private fun showTrackedList(status: TextView) {
+    /** Populates [container] with favorited episodes grouped by show, reading the widget's Glance state. */
+    private fun loadFavoritesAsync(status: TextView, container: LinearLayout) {
+        status.text = "Loading…"
+        Thread {
+            val shows = runCatching { runBlocking { readWidgetFavoriteShows() } }.getOrDefault(emptyList())
+            runOnUiThread {
+                renderFavorites(container, shows)
+                status.text = if (shows.isEmpty()) "No favorites yet." else "${shows.sumOf { it.episodes.size }} favorited."
+            }
+        }.start()
+    }
+
+    private suspend fun readWidgetFavoriteShows(): List<FavoriteShow> {
+        val glanceId = GlanceAppWidgetManager(this).getGlanceIds(TvWidget::class.java).firstOrNull()
+            ?: return emptyList()
+        val prefs = getAppWidgetState(this, PreferencesGlanceStateDefinition, glanceId)
+        return WidgetState.favoriteShows(WidgetState.favorites(prefs), WidgetState.rewatchLog(prefs))
+    }
+
+    private fun renderFavorites(container: LinearLayout, shows: List<FavoriteShow>) {
+        container.removeAllViews()
+        if (shows.isEmpty()) {
+            container.addView(label(text = "NO FAVORITES YET", sizeSp = 14f, color = Color.parseColor("#888888")))
+            return
+        }
+        shows.forEach { show ->
+            container.addView(TextView(this).apply {
+                text = "${show.title}   ·   Watched x${show.rewatchCount}"
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                setPadding(0, 28, 0, 8)
+            })
+            show.episodes.forEach { episode ->
+                container.addView(
+                    LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(24, 8, 0, 8)
+                        addView(TextView(this@MainActivity).apply {
+                            text = "${episode.episodeCode} · ${episode.label}"
+                            setTextColor(Color.parseColor("#AAAAAA"))
+                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                        })
+                        addView(Button(this@MainActivity).apply {
+                            text = "★ UNFAVORITE"
+                            setOnClickListener {
+                                unfavoriteFromApp(show.title, episode.episodeCode) {
+                                    val refreshed = shows.mapNotNull { s ->
+                                        if (s.title != show.title) s
+                                        else s.copy(episodes = s.episodes.filterNot { it.episodeCode == episode.episodeCode })
+                                            .takeIf { it.episodes.isNotEmpty() }
+                                    }
+                                    renderFavorites(container, refreshed)
+                                }
+                            }
+                        })
+                    }
+                )
+            }
+        }
+    }
+
+    /** Unfavorites one episode by writing straight to the widget's Glance state, then redraws it. */
+    private fun unfavoriteFromApp(showTitle: String, episodeCode: String, onDone: () -> Unit) {
+        Thread {
+            runBlocking {
+                val glanceIds = GlanceAppWidgetManager(this@MainActivity).getGlanceIds(TvWidget::class.java)
+                glanceIds.forEach { glanceId ->
+                    updateAppWidgetState(this@MainActivity, glanceId) { prefs ->
+                        val current = WidgetState.favorites(prefs)
+                        val updated = current.filterNot { it.showTitle == showTitle && it.episodeCode == episodeCode }
+                        prefs[WidgetState.FAVORITES] = WidgetState.encodeFavorites(updated)
+                    }
+                }
+                TvWidget().updateAll(this@MainActivity)
+            }
+            runOnUiThread(onDone)
+        }.start()
+    }
+
+    /** Populates the shared results list with today's trending shows, tracked ones pinned first. */
+    private fun loadRecommendedAsync(status: TextView) {
         if (!sessionTrackedShowsSeeded) {
             sessionTrackedShows += TrackedShowsRepository.list(this).map { show ->
-                CatalogueShow(
-                    tvMazeId = show.tvMazeId,
-                    title = show.title,
-                    network = show.network,
-                    status = "TRACKING",
-                    posterUrl = show.posterUrl,
-                    tracked = true,
-                )
+                CatalogueShow(show.tvMazeId, show.title, show.network, "TRACKING", show.posterUrl, tracked = true)
             }
             sessionTrackedShowsSeeded = true
         }
         resultsAdapter.submit(sessionTrackedShows.toList())
-        val trackedCount = sessionTrackedShows.count { it.tracked }
-        status.text = if (trackedCount == 0) "No shows tracked yet." else "$trackedCount tracked."
+        status.text = "Loading trending shows…"
+        Thread {
+            val browsed = runCatching { runBlocking { TvMazeApi.browse() } }.getOrDefault(emptyList())
+            val trackedIds = sessionTrackedShows.map { it.tvMazeId }.toSet()
+            val merged = sessionTrackedShows + browsed
+                .filterNot { it.tvMazeId in trackedIds }
+                .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
+            runOnUiThread {
+                resultsAdapter.submit(merged)
+                status.text = "${merged.size} shown."
+            }
+        }.start()
     }
 
-    // -- CATALOGUE search results --------------------------------------------------------------
+    // -- CATALOGUE search/recommended results ---------------------------------------------------
 
     private inner class ResultsAdapter : BaseAdapter() {
         private var items: List<CatalogueShow> = emptyList()
@@ -320,7 +484,7 @@ class MainActivity : Activity() {
     companion object {
         const val EXTRA_SHOW_TITLE = "show_title"
         const val EXTRA_EPISODE_CODE = "episode_code"
-        const val EXTRA_OPEN_SEARCH = "open_search"
+        const val EXTRA_OPEN_CATALOGUE = "open_catalogue"
         private const val SEARCH_DEBOUNCE_MS = 300L
         private val ACCENT = Color.parseColor("#F2C81E")
     }
