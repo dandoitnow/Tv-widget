@@ -13,6 +13,9 @@ import androidx.work.WorkerParameters
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.appwidget.updateAll
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import com.example.tvwidget.data.AnticipatedSource
 import com.example.tvwidget.data.BundledAnticipatedSource
 import com.example.tvwidget.data.PosterStore
@@ -101,19 +104,31 @@ class AnticipatedSyncWorker(
         }.sortedWith(compareBy({ it.dayOffset }, { it.airTime }))
     }
 
-    private suspend fun cachePosters(anticipatedTitles: List<String>, tracked: List<TrackedShow>) {
+    /**
+     * Tracked shows are cached first and in parallel, ahead of the (more numerous, one-request-each)
+     * demo/anticipated titles. [runOnce] uses `ExistingWorkPolicy.REPLACE`, which cancels an in-flight
+     * run outright — every track/untrack tap enqueues one, so tracking several shows back-to-back
+     * used to be able to cancel an earlier run before it ever reached that show's poster download,
+     * leaving it stuck on the placeholder. Doing the few tracked posters first, concurrently, secures
+     * them well before a follow-up tap has any chance to cancel the run.
+     */
+    private suspend fun cachePosters(anticipatedTitles: List<String>, tracked: List<TrackedShow>) = coroutineScope {
+        tracked.map { show ->
+            async { PosterStore.ensureCached(applicationContext, PosterStore.keyFor(show.title), show.posterUrl) }
+        }.awaitAll()
+
         // Sample/demo titles (TODAY's bundled seed data, ANTICIPATED) have no known poster URL —
         // resolve one by title via TVMaze's single-show search.
         val demoTitles = (SampleData.releases().map { it.showTitle } + anticipatedTitles).distinct()
-        demoTitles.forEach { title ->
-            val key = PosterStore.keyFor(title)
-            if (!PosterStore.has(applicationContext, key)) {
-                val url = runCatching { TvMazeApi.posterFor(title) }.getOrNull()
-                PosterStore.ensureCached(applicationContext, key, url)
+        demoTitles.map { title ->
+            async {
+                val key = PosterStore.keyFor(title)
+                if (!PosterStore.has(applicationContext, key)) {
+                    val url = runCatching { TvMazeApi.posterFor(title) }.getOrNull()
+                    PosterStore.ensureCached(applicationContext, key, url)
+                }
             }
-        }
-        // Tracked shows already carry their own poster URL from TVMaze (or the search screen).
-        tracked.forEach { show -> PosterStore.ensureCached(applicationContext, PosterStore.keyFor(show.title), show.posterUrl) }
+        }.awaitAll()
     }
 
     companion object {

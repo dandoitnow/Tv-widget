@@ -59,7 +59,7 @@ class TvWidget : GlanceAppWidget() {
         val snapshot = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
         val snapshotTab = WidgetState.tab(snapshot)
         val posterTitles = when (snapshotTab) {
-            Tab.TODAY -> WidgetState.releases(snapshot).map(Release::showTitle)
+            Tab.TODAY -> WidgetState.releases(snapshot).filterNot { it.hasAired }.map(Release::showTitle)
             Tab.ANTICIPATED -> WidgetState.anticipated(snapshot).map(AnticipatedShow::title)
         }
         // PosterStore keeps a process-lifetime in-memory cache, so repeated redraws (e.g. a star
@@ -87,7 +87,15 @@ private fun WidgetContent(posters: Map<String, Bitmap>) {
         ) {
             Header(selected = tab, todayCount = todayCount)
             when (tab) {
-                Tab.TODAY -> TodayFeed(releases = releases, favorites = favorites, posters = posters)
+                // Aired releases are dropped from TODAY entirely (not just collapsed) so the list
+                // always *starts* at today's first release — Glance's LazyColumn has no scroll-to-
+                // index API to jump there on a tap, so the only way to guarantee landing on today is
+                // for there to be nothing rendered above it to land past.
+                Tab.TODAY -> TodayFeed(
+                    releases = releases.filterNot { it.hasAired },
+                    favorites = favorites,
+                    posters = posters,
+                )
 
                 Tab.ANTICIPATED -> AnticipatedList(shows = WidgetState.anticipated(prefs), posters = posters)
             }

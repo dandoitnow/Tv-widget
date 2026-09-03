@@ -79,16 +79,7 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
             modifier = GlanceModifier
                 .fillMaxWidth()
                 .height(rowHeight - 1.dp)
-                .padding(horizontal = Tokens.RowPaddingHorizontal)
-                // A tap anywhere but on the star deep-links into the app's episode screen.
-                .clickable(
-                    actionStartActivity<MainActivity>(
-                        actionParametersOf(
-                            ActionKeys.showTitle to release.showTitle,
-                            ActionKeys.episodeCode to release.episodeCode,
-                        )
-                    )
-                ),
+                .padding(horizontal = Tokens.RowPaddingHorizontal),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Poster(title = release.showTitle, posters = posters, dimmed = dimmed)
@@ -106,6 +97,17 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
                         Tokens.dim(Tokens.TextPrimary, dimmed),
                     ),
                     maxLines = 1,
+                    // Only the title itself opens IMDb (via MainActivity's pass-through — Glance
+                    // can't launch an arbitrary Intent directly) — the rest of the row does nothing
+                    // on tap, so a poster/meta tap can't be mistaken for the title's action.
+                    modifier = GlanceModifier.clickable(
+                        actionStartActivity<MainActivity>(
+                            actionParametersOf(
+                                ActionKeys.showTitle to release.showTitle,
+                                ActionKeys.episodeCode to release.episodeCode,
+                            )
+                        )
+                    ),
                 )
             }
             Spacer(GlanceModifier.width(6.dp))
