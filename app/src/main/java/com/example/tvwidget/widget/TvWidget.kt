@@ -1,7 +1,6 @@
 package com.example.tvwidget.widget
 
 import android.content.Context
-import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -9,10 +8,10 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.LocalContext
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.provideContent
-import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.background
 import androidx.glance.currentState
 import androidx.glance.layout.Column
@@ -47,36 +46,38 @@ class TvWidget : GlanceAppWidget() {
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        // This snapshot exists *only* to decide which tab's posters are worth preloading — the
-        // actual UI below reads state reactively via `currentState()` inside the composable, same as
-        // it always has. An earlier attempt to also thread this snapshot's decoded lists into the
-        // composable as plain parameters (skipping `currentState()` entirely) caused tab switching to
-        // get stuck: Glance's `update()` doesn't guarantee provideGlance fully re-runs on every
-        // action the way a fresh session's initial call does, so those parameters could go stale.
-        // `currentState()` is what stays correctly reactive across however Glance actually schedules
-        // recomposition; this snapshot is a best-effort read only, safe to be occasionally a redraw
-        // behind since the worst case is just missing posters for one frame after a tab switch.
-        val snapshot = getAppWidgetState(context, PreferencesGlanceStateDefinition, id)
-        val snapshotTab = WidgetState.tab(snapshot)
-        val posterTitles = when (snapshotTab) {
-            Tab.TODAY -> WidgetState.releases(snapshot).filterNot { it.hasAired }.map(Release::showTitle)
-            Tab.ANTICIPATED -> WidgetState.anticipated(snapshot).map(AnticipatedShow::title)
-        }
-        // PosterStore keeps a process-lifetime in-memory cache, so repeated redraws (e.g. a star
-        // toggle) don't re-decode the same PNGs from disk every time.
-        val posters = PosterStore.loadBitmaps(context, posterTitles.map(PosterStore::keyFor))
-
-        provideContent { WidgetContent(posters) }
+        provideContent { WidgetContent() }
     }
 }
 
 @Composable
-private fun WidgetContent(posters: Map<String, Bitmap>) {
+private fun WidgetContent() {
     val prefs = currentState<Preferences>()
     val tab = WidgetState.tab(prefs)
     val releases = WidgetState.releases(prefs)
     val favorites = WidgetState.favorites(prefs)
     val todayCount = releases.count { it.isToday }
+
+    // Aired releases are dropped from TODAY entirely (not just collapsed) so the list always
+    // *starts* at today's first release — Glance's LazyColumn has no scroll-to-index API to jump
+    // there on a tap, so the only way to guarantee landing on today is for there to be nothing
+    // rendered above it to land past.
+    val todayReleases = releases.filterNot { it.hasAired }
+    val anticipated = WidgetState.anticipated(prefs)
+
+    // Read directly here — reactively, off `tab`/`releases`/`anticipated` above — rather than as a
+    // value computed once in `provideGlance` and passed down. `provideGlance`'s suspend body isn't
+    // guaranteed to actually re-run on every redraw (Glance's `update()`/`updateAll()` can just
+    // recompose an already-alive session via `currentState()` instead — the exact thing that once
+    // left tab-switching stuck), so a `posters` map snapshotted there could go stale indefinitely:
+    // freshly-cached art from a sync would never make it into the widget until something forced a
+    // truly fresh `provideGlance` call. Reading it here keeps it exactly as reactive as `tab` and
+    // `releases` already are.
+    val posterTitles = when (tab) {
+        Tab.TODAY -> todayReleases.map(Release::showTitle)
+        Tab.ANTICIPATED -> anticipated.map(AnticipatedShow::title)
+    }
+    val posters = PosterStore.loadBitmapsBlocking(LocalContext.current, posterTitles.map(PosterStore::keyFor))
 
     GlanceTheme {
         Column(
@@ -87,17 +88,9 @@ private fun WidgetContent(posters: Map<String, Bitmap>) {
         ) {
             Header(selected = tab, todayCount = todayCount)
             when (tab) {
-                // Aired releases are dropped from TODAY entirely (not just collapsed) so the list
-                // always *starts* at today's first release — Glance's LazyColumn has no scroll-to-
-                // index API to jump there on a tap, so the only way to guarantee landing on today is
-                // for there to be nothing rendered above it to land past.
-                Tab.TODAY -> TodayFeed(
-                    releases = releases.filterNot { it.hasAired },
-                    favorites = favorites,
-                    posters = posters,
-                )
+                Tab.TODAY -> TodayFeed(releases = todayReleases, favorites = favorites, posters = posters)
 
-                Tab.ANTICIPATED -> AnticipatedList(shows = WidgetState.anticipated(prefs), posters = posters)
+                Tab.ANTICIPATED -> AnticipatedList(shows = anticipated, posters = posters)
             }
         }
     }

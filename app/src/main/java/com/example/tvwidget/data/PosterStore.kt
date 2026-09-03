@@ -99,9 +99,21 @@ object PosterStore {
      * thread and is memoized for next time.
      */
     suspend fun loadBitmaps(context: Context, keys: Collection<String>): Map<String, Bitmap> =
-        withContext(Dispatchers.IO) {
-            keys.distinct().mapNotNull { key -> loadOne(context, key)?.let { key to it } }.toMap()
-        }
+        withContext(Dispatchers.IO) { loadBitmapsBlocking(context, keys) }
+
+    /**
+     * Same as [loadBitmaps], without the dispatcher hop — for calling directly from inside a Glance
+     * composable body (see `TvWidget.WidgetContent`), which needs this read to happen fresh on every
+     * recomposition rather than once in `provideGlance`: Glance's `update()`/`updateAll()` don't
+     * guarantee `provideGlance`'s suspend body actually re-runs on every redraw (the same reason
+     * `tab`/`releases` are read via `currentState()` there instead of a value computed once and
+     * passed in) — a value snapshotted in `provideGlance` and merely passed down can go stale for as
+     * long as the widget's session keeps recomposing without a fresh `provideGlance` call. These are
+     * small, already-local, already-cached reads, so a blocking call inside composition is a fine
+     * trade for correctness here.
+     */
+    fun loadBitmapsBlocking(context: Context, keys: Collection<String>): Map<String, Bitmap> =
+        keys.distinct().mapNotNull { key -> loadOne(context, key)?.let { key to it } }.toMap()
 
     private fun loadOne(context: Context, key: String): Bitmap? {
         val file = file(context, key)
