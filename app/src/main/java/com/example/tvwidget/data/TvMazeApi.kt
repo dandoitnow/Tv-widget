@@ -2,6 +2,9 @@ package com.example.tvwidget.data
 
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -34,6 +37,9 @@ object TvMazeApi {
     private const val SCHEDULE_TTL_MS = 15 * 60_000L
     private const val BROWSE_TTL_MS = 10 * 60_000L
 
+    /** How many days of schedule [browse] pools together. See its doc for why this isn't 1. */
+    private const val BROWSE_DAYS = 4
+
     data class EpisodeInfo(val airDate: LocalDate, val airTime: String, val code: String)
     data class ShowSchedule(val previous: EpisodeInfo?, val next: EpisodeInfo?, val imdbId: String? = null)
 
@@ -60,28 +66,42 @@ object TvMazeApi {
 
     /**
      * A "trending" slice for CATALOGUE's TRENDING tab. TVMaze has no dedicated trending endpoint, so
-     * this approximates one: today's web/TV schedule (i.e. shows actually airing something right
-     * now, not TVMaze's full multi-thousand-show index) ranked by its own `weight` field — the same
-     * popularity signal [search] re-ranks by — and truncated to [limit]. "Currently running" plus
-     * "popular" together is a reasonable proxy for trending without a real trending API to call.
+     * this approximates one: the web/TV schedule (i.e. shows actually airing something right now,
+     * not TVMaze's full multi-thousand-show index) ranked by its own `weight` field — the same
+     * popularity signal [search] re-ranks by. "Currently running" plus "popular" together is a
+     * reasonable proxy for trending without a real trending API to call.
      *
-     * @throws java.io.IOException if both underlying requests failed, so the caller (whose
+     * The window spans [BROWSE_DAYS] days rather than just today. A single day's schedule yields a
+     * thin list — most of it one-off talk and news programming once you get past the first handful —
+     * which left the tab with almost nothing to scroll. Widening the window deepens the pool without
+     * giving up the "currently running" property that makes the ranking mean anything.
+     *
+     * The full ranked list is what gets cached; [limit] is applied to the *result*, so callers
+     * asking for different depths share one fetch instead of poisoning each other's cache entry.
+     *
+     * @throws java.io.IOException if every underlying request failed, so the caller (whose
      *   `runCatching` drives `AnticipatedSyncWorker`'s retry-and-preserve-old-data behavior) can tell
-     *   "the network is down" apart from "fetched fine, nothing is scheduled today" — [get] swallows
-     *   its own failures into a `null` body, so that distinction has to be made here.
+     *   "the network is down" apart from "fetched fine, nothing is scheduled" — [get] swallows its
+     *   own failures into a `null` body, so that distinction has to be made here.
      */
-    suspend fun browse(limit: Int = 25): List<CatalogueShow> = withContext(Dispatchers.IO) {
+    suspend fun browse(limit: Int = 120): List<CatalogueShow> = withContext(Dispatchers.IO) {
         browseCache?.let { (fetchedAt, cached) ->
-            if (System.currentTimeMillis() - fetchedAt < BROWSE_TTL_MS) return@withContext cached
+            if (System.currentTimeMillis() - fetchedAt < BROWSE_TTL_MS) {
+                return@withContext cached.take(limit)
+            }
         }
-        val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-        val webBody = get("$BASE/schedule/web?date=$today")
-        val tvBody = get("$BASE/schedule?date=$today")
-        if (webBody == null && tvBody == null) {
-            throw java.io.IOException("Both TVMaze schedule endpoints failed")
+        val today = LocalDate.now()
+        val urls = (0 until BROWSE_DAYS).flatMap { offset ->
+            val date = today.plusDays(offset.toLong()).format(DateTimeFormatter.ISO_LOCAL_DATE)
+            listOf("$BASE/schedule/web?date=$date", "$BASE/schedule?date=$date")
         }
+        // In parallel: serially this would be BROWSE_DAYS * 2 round trips stacked end to end, which
+        // is long enough to be felt as a stall when the tab opens.
+        val bodies = coroutineScope { urls.map { async { get(it) } }.awaitAll() }.filterNotNull()
+        if (bodies.isEmpty()) throw java.io.IOException("All TVMaze schedule requests failed")
+
         val shows = LinkedHashMap<Int, JSONObject>()
-        listOfNotNull(webBody, tvBody).forEach { body ->
+        bodies.forEach { body ->
             val entries = JSONArray(body)
             for (i in 0 until entries.length()) {
                 val entry = entries.optJSONObject(i) ?: continue
@@ -94,9 +114,9 @@ object TvMazeApi {
         }
         shows.values
             .sortedByDescending { it.optInt("weight", 0) }
-            .take(limit)
             .map(::toCatalogueShow)
             .also { browseCache = System.currentTimeMillis() to it }
+            .take(limit)
     }
 
     /**
