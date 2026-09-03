@@ -61,22 +61,41 @@ class MainActivity : Activity() {
 
         when {
             openCatalogue -> setContentView(buildCatalogueScreen())
-            // Tapping a TODAY row's title is meant to open that episode's IMDb page — Glance's
+            // Tapping a TODAY row's title is meant to open that show's IMDb page — Glance's
             // actionStartActivity only launches a typed Activity, not an arbitrary Intent, so the
             // widget starts this Activity with the show/episode extras and this is the pass-through
-            // that actually fires the ACTION_VIEW intent. Falls back to the old placeholder screen
-            // only if nothing on the device can handle it (no browser/IMDb app at all).
-            show != null -> if (openImdb(show, episode, imdbId)) finish() else setContentView(buildDeepLinkScreen(show, episode))
+            // that actually fires the ACTION_VIEW intent.
+            show != null -> resolveImdbIdThenOpen(show, episode, imdbId)
             else -> setContentView(buildHomeScreen())
         }
     }
 
     /**
+     * If the widget didn't already know an imdbId (a show tracked before that field existed, whose
+     * TRACKED_RELEASES hasn't been rewritten by a sync since — that sync backfill is a background
+     * convenience, not something a tap should have to wait on), this looks it up live instead of
+     * falling straight to a text search. A brief blank window while that one request completes is a
+     * better trade than "this always goes to a search" — the whole point of an id lookup is to avoid
+     * search whenever there's any reasonable way to.
+     */
+    private fun resolveImdbIdThenOpen(show: String, episode: String?, knownImdbId: String?) {
+        if (!knownImdbId.isNullOrBlank()) {
+            if (!openImdb(show, episode, knownImdbId)) setContentView(buildDeepLinkScreen(show, episode))
+            return
+        }
+        Thread {
+            val resolved = runCatching { runBlocking { TvMazeApi.imdbIdFor(show) } }.getOrNull()
+            runOnUiThread {
+                if (!openImdb(show, episode, resolved)) setContentView(buildDeepLinkScreen(show, episode))
+            }
+        }.start()
+    }
+
+    /**
      * Opens IMDb directly at the show's own page when [imdbId] is known (TVMaze doesn't expose a
      * per-episode IMDb crosswalk, so this is the closest a title tap gets to "that exact episode" —
-     * the show's main page, not a text search). Falls back to a text search only for the small sliver
-     * of content with no known id (the bundled demo rows, or a show tracked before this existed and
-     * not yet backfilled by a sync). Returns false if nothing on the device could handle it.
+     * the show's main page, not a text search). Falls back to a text search only when no id could be
+     * found at all. Returns false if nothing on the device could handle the resulting intent.
      */
     private fun openImdb(show: String, episode: String?, imdbId: String?): Boolean {
         val url = if (!imdbId.isNullOrBlank()) {
@@ -84,7 +103,9 @@ class MainActivity : Activity() {
         } else {
             "https://www.imdb.com/find/?q=" + Uri.encode(listOfNotNull(show, episode).joinToString(" "))
         }
-        return runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
+        val success = runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
+        if (success) finish()
+        return success
     }
 
     // -- Screens -------------------------------------------------------------------------------
