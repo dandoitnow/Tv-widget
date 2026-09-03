@@ -111,7 +111,10 @@ private fun ReleaseRow(release: Release, favorited: Boolean, posters: Map<String
             Spacer(GlanceModifier.width(6.dp))
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = release.episodeCode,
+                    // A future episode leads with a countdown instead of its episode number — once
+                    // it's still days away, "how long until it airs" is more useful at a glance than
+                    // S/E; today's and already-aired rows keep showing the episode code.
+                    text = if (release.dayOffset > 0) release.countdownLabel else release.episodeCode,
                     style = Tokens.mono(
                         Dimens.accentLabelSize(),
                         Tokens.dim(Tokens.TextPrimary, dimmed),

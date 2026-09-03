@@ -20,6 +20,8 @@ import androidx.glance.layout.fillMaxSize
 import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import com.example.tvwidget.data.AnticipatedShow
+import com.example.tvwidget.data.CatalogueShow
+import com.example.tvwidget.data.CatalogueSubTab
 import com.example.tvwidget.data.FavoriteShow
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.Release
@@ -62,10 +64,13 @@ class TvWidget : GlanceAppWidget() {
         val posterTitles = when (snapshotTab) {
             Tab.TODAY -> snapshotReleases.map(Release::showTitle)
             Tab.ANTICIPATED -> WidgetState.anticipated(snapshot).map(AnticipatedShow::title)
-            Tab.FAVORITES -> WidgetState.favoriteShows(
-                WidgetState.favorites(snapshot),
-                WidgetState.rewatchLog(snapshot),
-            ).map(FavoriteShow::title)
+            Tab.CATALOGUE -> when (WidgetState.catalogueSubTab(snapshot)) {
+                CatalogueSubTab.FAVORITES -> WidgetState.favoriteShows(
+                    WidgetState.favorites(snapshot),
+                    WidgetState.rewatchLog(snapshot),
+                ).map(FavoriteShow::title)
+                CatalogueSubTab.RECOMMENDED -> WidgetState.recommended(snapshot).map(CatalogueShow::title)
+            }
         }
         // PosterStore keeps a process-lifetime in-memory cache, so repeated redraws (e.g. a star
         // toggle or rewatch count tap, each of which redraws the widget) don't re-decode the same
@@ -97,10 +102,12 @@ private fun WidgetContent(posters: Map<String, Bitmap>) {
 
                 Tab.ANTICIPATED -> AnticipatedList(shows = WidgetState.anticipated(prefs), posters = posters)
 
-                Tab.FAVORITES -> FavoritesList(
-                    shows = WidgetState.favoriteShows(favorites, WidgetState.rewatchLog(prefs)),
+                Tab.CATALOGUE -> CatalogueTab(
+                    subTab = WidgetState.catalogueSubTab(prefs),
+                    favoriteShows = WidgetState.favoriteShows(favorites, WidgetState.rewatchLog(prefs)),
                     openShow = WidgetState.openShow(prefs),
                     openRewatchLog = WidgetState.openRewatchLog(prefs),
+                    recommended = WidgetState.recommended(prefs),
                     posters = posters,
                 )
             }

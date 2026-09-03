@@ -3,12 +3,15 @@ package com.example.tvwidget.data
 import kotlinx.serialization.Serializable
 
 /**
- * Which tab the widget is showing. Persisted by [name].
+ * Which top-level tab the widget is showing. Persisted by [name].
  *
- * CATALOGUE is deliberately not a tab: there's no widget-side browsable list, just a header button
- * that opens the app straight into its search screen (see [com.example.tvwidget.widget.Header]).
+ * There are three, side by side, now that FAVORITES moved inside CATALOGUE as one of its two
+ * [CatalogueSubTab]s (the other being RECOMMENDED) — see [com.example.tvwidget.widget.CatalogueTab].
  */
-enum class Tab { TODAY, ANTICIPATED, FAVORITES }
+enum class Tab { TODAY, ANTICIPATED, CATALOGUE }
+
+/** Which of CATALOGUE's two sub-views is showing. Persisted by [name]. */
+enum class CatalogueSubTab { FAVORITES, RECOMMENDED }
 
 /** Status shown in the right column of a TODAY row. */
 enum class ReleaseStatus(val label: String) {
@@ -44,6 +47,13 @@ data class Release(
 
     /** Label stored alongside a favourite, e.g. `FRI 28 AUG · APPLE TV+`. */
     fun favoriteLabel(): String = "$dateLabel · $network"
+
+    /**
+     * `IN 3D` for a not-yet-aired episode. Scheduled rows show this instead of [episodeCode] — once
+     * an episode is in the future, "how long until it airs" is more useful at a glance than its
+     * season/episode number, which stays visible for today's and already-aired rows.
+     */
+    val countdownLabel: String get() = if (dayOffset > 0) "IN ${dayOffset}D" else ""
 }
 
 /**
@@ -85,8 +95,10 @@ data class FavoriteShow(
 }
 
 /**
- * One TVMaze show shown in [com.example.tvwidget.MainActivity]'s search screen — either a search hit
- * or an entry from the user's tracked-shows list, both rendered by the same row/adapter there.
+ * One TVMaze show — a search hit or tracked-list entry in [com.example.tvwidget.MainActivity]'s
+ * search screen, or a row in CATALOGUE's RECOMMENDED sub-tab. [tracked] is set by the sync worker
+ * from [TrackedShowsRepository] before a RECOMMENDED row is drawn, so the widget never has to
+ * cross-reference the two lists at render time.
  */
 @Serializable
 data class CatalogueShow(
