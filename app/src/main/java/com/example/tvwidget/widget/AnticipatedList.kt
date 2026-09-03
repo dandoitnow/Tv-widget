@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceModifier
+import androidx.glance.action.actionParametersOf
+import androidx.glance.action.actionStartActivity
+import androidx.glance.action.clickable
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.background
@@ -17,6 +20,7 @@ import androidx.glance.layout.padding
 import androidx.glance.layout.width
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
+import com.example.tvwidget.MainActivity
 import com.example.tvwidget.data.AnticipatedShow
 import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Tokens
@@ -62,6 +66,13 @@ private fun AnticipatedRow(rank: Int, show: AnticipatedShow, posters: Map<String
                     text = show.title,
                     style = Tokens.display(Dimens.TitleSize),
                     maxLines = 1,
+                    // Same as TODAY's title tap: opens the show's IMDb page (MainActivity resolves
+                    // the id live since these curated entries don't carry a known one ahead of time).
+                    modifier = GlanceModifier.clickable(
+                        actionStartActivity<MainActivity>(
+                            actionParametersOf(ActionKeys.showTitle to show.title)
+                        )
+                    ),
                 )
             }
             Spacer(GlanceModifier.width(6.dp))
