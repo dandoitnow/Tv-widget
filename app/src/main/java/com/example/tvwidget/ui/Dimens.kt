@@ -217,4 +217,29 @@ object Dimens {
 
     /** How many rows the list shows before the rest are handed to the ticker. */
     const val TickerStartsAfter = 4
+
+    // -- The RemoteViews budget ------------------------------------------------------------------
+
+    /**
+     * The most rows the widget will render, whatever the data holds.
+     *
+     * This is a hard platform constraint wearing the clothes of a design decision. A widget's
+     * RemoteViews crosses a Binder transaction with a size limit, and Glance's `LazyColumn` parcels
+     * *every* item rather than only the ones on screen — so cost scales with the length of the list,
+     * not with what fits. Rendering the full POPULAR feed overran it and killed the launcher's
+     * widget host outright (`TransactionTooLargeException: data parcel size 779984 bytes`), which
+     * took the whole widget down rather than just truncating it.
+     *
+     * With posters downscaled for the widget (see `PosterStore.loadBitmapsBlocking`), a row costs
+     * roughly 15KB and twenty of them leave comfortable headroom under the limit. The full list is
+     * still fetched and still lives in the Catalogue screen, which is an ordinary Activity and has
+     * no such ceiling.
+     */
+    const val MaxWidgetRows = 20
+
+    /**
+     * Target poster width in pixels for widget rows. Rows draw posters between 28dp and 78dp wide,
+     * so this is a touch soft only at the largest tier — a fair trade for a list that renders at all.
+     */
+    const val WidgetPosterWidthPx = 72
 }
