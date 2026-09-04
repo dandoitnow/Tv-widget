@@ -37,6 +37,7 @@ import com.example.tvwidget.data.AnticipatedShow
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.Release
 import com.example.tvwidget.data.Tab
+import com.example.tvwidget.data.TrackedShowsRepository
 import com.example.tvwidget.data.WidgetState
 import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Surfaces
@@ -46,7 +47,7 @@ import com.example.tvwidget.ui.Tokens
  * The 5x2 TV release tracker widget.
  *
  * All widget state lives in the Glance `DataStore` ([PreferencesGlanceStateDefinition]) so the
- * widget restores identically after a launcher restart. CATALOG (Favorites + Trending + search)
+ * widget restores identically after a launcher restart. CATALOG (Tracked + Trending + For You + search)
  * isn't a tab here at all — see [Header] — so there are only two.
  */
 class TvWidget : GlanceAppWidget() {
@@ -74,7 +75,6 @@ private fun WidgetContent() {
     val prefs = currentState<Preferences>()
     val tab = WidgetState.tab(prefs)
     val releases = WidgetState.releases(prefs)
-    val favorites = WidgetState.favorites(prefs)
     val todayCount = releases.count { it.isToday }
 
     // Aired releases are dropped from TODAY entirely (not just collapsed) so the list always
@@ -115,6 +115,13 @@ private fun WidgetContent() {
     // Dominant colours for the per-row edge light. Memoized alongside the bitmaps above, so for
     // anything already being drawn this costs a map lookup.
     val accents = PosterStore.loadAccentsBlocking(context, keys)
+    // Which POPULAR rows are already followed, so the quick-add control shows the right state. A
+    // SharedPreferences read of a short list — cheap enough to do on the draw path.
+    val trackedIds = if (tab == Tab.ANTICIPATED) {
+        TrackedShowsRepository.list(context).map { it.tvMazeId }.toSet()
+    } else {
+        emptySet()
+    }
 
     GlanceTheme {
         Column(
@@ -152,7 +159,6 @@ private fun WidgetContent() {
                     when (tab) {
                         Tab.TODAY -> TodayFeed(
                             releases = todayReleases,
-                            favorites = favorites,
                             posters = posters,
                             accents = accents,
                             hidden = hidden,
@@ -168,6 +174,7 @@ private fun WidgetContent() {
                                 shows = anticipated,
                                 posters = posters,
                                 accents = accents,
+                                trackedIds = trackedIds,
                                 hidden = hidden,
                             )
                         }

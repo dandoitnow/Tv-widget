@@ -11,7 +11,6 @@ import androidx.glance.action.actionParametersOf
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.AndroidRemoteViews
-import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.layout.Alignment
@@ -27,7 +26,6 @@ import androidx.glance.layout.width
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import com.example.tvwidget.MainActivity
-import com.example.tvwidget.data.FavoriteEpisode
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.Release
 import com.example.tvwidget.ui.Dimens
@@ -49,7 +47,6 @@ import com.example.tvwidget.ui.Tokens
 @Composable
 fun TodayFeed(
     releases: List<Release>,
-    favorites: List<FavoriteEpisode>,
     posters: Map<String, Bitmap>,
     accents: Map<String, Int>,
     hidden: Int = 0,
@@ -65,7 +62,6 @@ fun TodayFeed(
     val hero = releases.first()
     HeroRow(
         release = hero,
-        favorited = favorites.any { it.showTitle == hero.showTitle && it.episodeCode == hero.episodeCode },
         posters = posters,
         accents = accents,
         // The next two releases fan out behind the hero's poster, so the row shows that there is a
@@ -89,9 +85,6 @@ fun TodayFeed(
                 // +1 because the hero already occupies depth 0 — the fade has to continue from
                 // where the hero left off, not restart under it.
                 depth = index + 1,
-                favorited = favorites.any {
-                    it.showTitle == release.showTitle && it.episodeCode == release.episodeCode
-                },
                 posters = posters,
                 accents = accents,
             )
@@ -134,7 +127,6 @@ private fun SectionLabel(text: String) {
 @Composable
 private fun HeroRow(
     release: Release,
-    favorited: Boolean,
     posters: Map<String, Bitmap>,
     accents: Map<String, Int>,
     behind: List<Bitmap>,
@@ -200,17 +192,6 @@ private fun HeroRow(
                     ),
                 )
             }
-            StarToggle(
-                favorited = favorited,
-                targetHeight = rowHeight,
-                onClick = actionRunCallback<ToggleFavoriteAction>(
-                    actionParametersOf(
-                        ActionKeys.showTitle to release.showTitle,
-                        ActionKeys.episodeCode to release.episodeCode,
-                        ActionKeys.episodeLabel to release.favoriteLabel(),
-                    )
-                ),
-            )
         }
     }
 }
@@ -220,7 +201,6 @@ private fun HeroRow(
 private fun ReleaseRow(
     release: Release,
     depth: Int,
-    favorited: Boolean,
     posters: Map<String, Bitmap>,
     accents: Map<String, Int>,
 ) {
@@ -310,18 +290,6 @@ private fun ReleaseRow(
                     )
                 }
             }
-            StarToggle(
-                favorited = favorited,
-                dimmed = dimmed,
-                targetHeight = rowHeight,
-                onClick = actionRunCallback<ToggleFavoriteAction>(
-                    actionParametersOf(
-                        ActionKeys.showTitle to release.showTitle,
-                        ActionKeys.episodeCode to release.episodeCode,
-                        ActionKeys.episodeLabel to release.favoriteLabel(),
-                    )
-                ),
-            )
         }
     }
 }

@@ -29,8 +29,8 @@ import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.appwidget.updateAll
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import com.example.tvwidget.data.CatalogShow
-import com.example.tvwidget.data.FavoriteShow
 import com.example.tvwidget.data.PosterStore
+import com.example.tvwidget.data.Recommender
 import com.example.tvwidget.data.TrackedShow
 import com.example.tvwidget.data.TrackedShowsRepository
 import com.example.tvwidget.data.TvMazeApi
@@ -49,8 +49,8 @@ import kotlinx.coroutines.runBlocking
 /**
  * Host activity. The product is the home-screen widget; this screen exists so the app is
  * launchable, so a title tap has somewhere to land, and so CATALOG — search, Tracked, Trending
- * and Favorites — has somewhere to run at all. None of that fits in a `RemoteViews`: no text field
- * for search, no room for Favorites' full detail, no motion.
+ * and For You — has somewhere to run at all. None of that fits in a `RemoteViews`: there is no text
+ * field for search, and no room for a recommender's reasoning.
  *
  * The whole screen is built in code rather than XML to stay consistent with how the rest of this
  * app is written, and styled through [AppTheme] so the app and the widget read as one product.
@@ -76,7 +76,7 @@ class MainActivity : Activity() {
     private enum class CatalogTab(val label: String) {
         TRACKED("Tracked"),
         TRENDING("Trending"),
-        FAVORITES("Favorites"),
+        RECOMMENDED("For You"),
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -244,7 +244,7 @@ class MainActivity : Activity() {
      *    point is "what I'm tracking" shouldn't keep showing something that isn't.
      *  - Trending: today's popular currently-running shows. Track/untrack flips the button in place;
      *    a show's trending status doesn't depend on whether you follow it.
-     *  - Favorites: favorited episodes, read from (and written back to) the widget's Glance state.
+     *  - For You: shows suggested from the genres of what is already tracked (see [Recommender]).
      *
      * Typing 2+ characters covers whichever tab is showing with search results; clearing restores it.
      */
@@ -328,20 +328,6 @@ class MainActivity : Activity() {
         root.addView(status)
 
         // -- Content ---------------------------------------------------------------------------
-        val favoritesContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutTransition = android.animation.LayoutTransition()
-        }
-        val favoritesScroll = ScrollView(this).apply {
-            addView(favoritesContainer)
-            isVerticalScrollBarEnabled = false
-            clipToPadding = false
-            setPadding(0, 0, 0, 24.dp)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        }
-        root.addView(favoritesScroll)
 
         resultsAdapter = ResultsAdapter()
         val catalogList = ListView(this).apply {
@@ -405,25 +391,22 @@ class MainActivity : Activity() {
             catalogList.setSelection(0)
             when (selectedCatalogTab) {
                 CatalogTab.TRACKED -> {
-                    favoritesScroll.visibility = View.GONE
                     catalogList.visibility = View.VISIBLE
                     catalogList.enterSoftly()
                     resultsAdapter.removeOnUntrack = true
                     loadTrackedAsync(status)
                 }
                 CatalogTab.TRENDING -> {
-                    favoritesScroll.visibility = View.GONE
                     catalogList.visibility = View.VISIBLE
                     // No enterSoftly here: this tab fetches, so the list is empty at this point and
                     // the animation would play on nothing. It runs when the rows land instead.
                     resultsAdapter.removeOnUntrack = false
                     loadTrendingAsync(status)
                 }
-                CatalogTab.FAVORITES -> {
-                    favoritesScroll.visibility = View.VISIBLE
-                    catalogList.visibility = View.GONE
-                    favoritesScroll.enterSoftly()
-                    loadFavoritesAsync(status, favoritesContainer)
+                CatalogTab.RECOMMENDED -> {
+                    catalogList.visibility = View.VISIBLE
+                    resultsAdapter.removeOnUntrack = false
+                    loadRecommendedAsync(status)
                 }
             }
         }
@@ -450,7 +433,6 @@ class MainActivity : Activity() {
                     showCurrentTab()
                     return
                 }
-                favoritesScroll.visibility = View.GONE
                 catalogList.visibility = View.VISIBLE
                 resultsAdapter.removeOnUntrack = false // a search hit shouldn't vanish on untrack
 
@@ -519,6 +501,50 @@ class MainActivity : Activity() {
     }
 
     /**
+     * FOR YOU: shows suggested from the genres of everything already tracked.
+     *
+     * The reason line rides along on each row, because a recommendation nobody can explain reads as
+     * an advertisement. With nothing tracked there is nothing to reason from, and the tab says so
+     * rather than quietly falling back to a popularity list dressed up as personalisation.
+     */
+    private fun loadRecommendedAsync(status: TextView) {
+        val token = ++tabToken
+        val tracked = TrackedShowsRepository.list(this)
+        if (tracked.isEmpty()) {
+            emptyMessage(
+                "Nothing to go on yet",
+                "Track a few shows and this fills with things that share their genres.",
+            )
+            resultsAdapter.submit(emptyList())
+            status.text = "NOTHING TRACKED YET"
+            return
+        }
+        emptyMessage(
+            "No suggestions right now",
+            "This needs a connection, and enough of a schedule to find matches in.",
+        )
+        resultsAdapter.submitLoading()
+        status.text = "FINDING MATCHES"
+        Thread {
+            val suggestions = runCatching { runBlocking { Recommender.forTracked(this@MainActivity, tracked) } }
+                .getOrDefault(emptyList())
+            runOnUiThread {
+                if (token != tabToken) return@runOnUiThread
+                resultsAdapter.submit(
+                    suggestions.map { it.show },
+                    reasons = suggestions.associate { it.show.tvMazeId to it.reason },
+                )
+                catalogListRef?.enterSoftly()
+                status.text = if (suggestions.isEmpty()) {
+                    "NO MATCHES FOUND"
+                } else {
+                    "${suggestions.size} FOR YOU"
+                }
+            }
+        }.start()
+    }
+
+    /**
      * TRENDING: popular currently-running shows you *aren't* already tracking.
      *
      * Tracked shows are filtered out rather than shown with a flipped button: this tab is for
@@ -551,120 +577,6 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    /** Populates [container] with favorited episodes grouped by show, from the widget's Glance state. */
-    private fun loadFavoritesAsync(status: TextView, container: LinearLayout) {
-        val token = ++tabToken
-        status.text = "LOADING"
-        Thread {
-            val shows = runCatching { runBlocking { readWidgetFavoriteShows() } }.getOrDefault(emptyList())
-            runOnUiThread {
-                if (token != tabToken) return@runOnUiThread // user moved on while this was in flight
-                renderFavorites(container, shows)
-                val episodes = shows.sumOf { it.episodes.size }
-                status.text = if (shows.isEmpty()) "NOTHING SAVED YET" else "$episodes SAVED"
-            }
-        }.start()
-    }
-
-    private suspend fun readWidgetFavoriteShows(): List<FavoriteShow> {
-        val glanceId = GlanceAppWidgetManager(this).getGlanceIds(TvWidget::class.java).firstOrNull()
-            ?: return emptyList()
-        val prefs = getAppWidgetState(this, PreferencesGlanceStateDefinition, glanceId)
-        return WidgetState.favoriteShows(WidgetState.favorites(prefs), WidgetState.rewatchLog(prefs))
-    }
-
-    /** Unfavorites one episode by writing straight to the widget's Glance state, then redraws it. */
-    private fun unfavoriteFromApp(showTitle: String, episodeCode: String, onDone: () -> Unit) {
-        Thread {
-            runBlocking {
-                val glanceIds = GlanceAppWidgetManager(this@MainActivity).getGlanceIds(TvWidget::class.java)
-                glanceIds.forEach { glanceId ->
-                    updateAppWidgetState(this@MainActivity, glanceId) { prefs ->
-                        val current = WidgetState.favorites(prefs)
-                        val updated = current.filterNot { it.showTitle == showTitle && it.episodeCode == episodeCode }
-                        prefs[WidgetState.FAVORITES] = WidgetState.encodeFavorites(updated)
-                    }
-                }
-                TvWidget().updateAll(this@MainActivity)
-            }
-            runOnUiThread(onDone)
-        }.start()
-    }
-
-    // -- Favorites rendering ---------------------------------------------------------------------
-
-    private fun renderFavorites(container: LinearLayout, shows: List<FavoriteShow>) {
-        container.removeAllViews()
-        if (shows.isEmpty()) {
-            container.addView(emptyState("Nothing saved yet", "Star an episode in the widget to keep it here."))
-            return
-        }
-        shows.forEach { show ->
-            container.addView(favoriteCard(container, shows, show))
-        }
-    }
-
-    private fun favoriteCard(
-        container: LinearLayout,
-        allShows: List<FavoriteShow>,
-        show: FavoriteShow,
-    ): View {
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = AppTheme.liftedSurface(AppTheme.SurfaceRaised, AppTheme.Surface, 20.dp.toFloat())
-            setPadding(18.dp, 16.dp, 18.dp, 8.dp)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 12.dp }
-        }
-
-        card.addView(TextView(this).apply {
-            text = show.title
-            display(19f)
-            maxLines = 1
-            setOnClickListener {
-                resolveImdbIdThenOpen(show.title, null, null, onUnresolved = ::showImdbUnavailable)
-            }
-        })
-        card.addView(TextView(this).apply {
-            text = "WATCHED ×${show.rewatchCount}  ·  ${show.episodes.size} SAVED"
-            label(10f, AppTheme.Accent, tracking = 0.22f)
-            setPadding(0, 5.dp, 0, 0)
-        })
-
-        show.episodes.forEach { episode ->
-            card.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, 12.dp, 0, 4.dp)
-                addView(TextView(this@MainActivity).apply {
-                    text = episode.episodeCode
-                    typeface = Typeface.MONOSPACE
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                    setTextColor(AppTheme.TextPrimary)
-                })
-                addView(TextView(this@MainActivity).apply {
-                    text = episode.label
-                    label(10.5f, AppTheme.TextMuted, tracking = 0.14f)
-                    maxLines = 1
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                        .apply { marginStart = 12.dp }
-                })
-                addView(pillButton(text = "REMOVE", active = false) {
-                    unfavoriteFromApp(show.title, episode.episodeCode) {
-                        val refreshed = allShows.mapNotNull { s ->
-                            if (s.title != show.title) s
-                            else s.copy(episodes = s.episodes.filterNot { it.episodeCode == episode.episodeCode })
-                                .takeIf { it.episodes.isNotEmpty() }
-                        }
-                        renderFavorites(container, refreshed)
-                    }
-                })
-            })
-        }
-        return card
-    }
-
     // -- Catalog rows --------------------------------------------------------------------------
 
     private inner class ResultsAdapter : BaseAdapter() {
@@ -687,11 +599,18 @@ class MainActivity : Activity() {
          */
         var removeOnUntrack = false
 
-        fun submit(newItems: List<CatalogShow>) {
+        /**
+         * [reasons] is why each show is being suggested, keyed by id. Only FOR YOU supplies it;
+         * everywhere else the meta line falls back to the show's own status and network.
+         */
+        fun submit(newItems: List<CatalogShow>, reasons: Map<Int, String> = emptyMap()) {
             items = newItems
+            this.reasons = reasons
             loading = false
             notifyDataSetChanged()
         }
+
+        private var reasons: Map<Int, String> = emptyMap()
 
         /** Shows placeholder cards until real rows arrive. */
         fun submitLoading(count: Int = 4) {
@@ -753,15 +672,19 @@ class MainActivity : Activity() {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                     .apply { marginStart = 14.dp }
             }
-            textColumn.addView(TextView(this@MainActivity).apply {
+            val meta = TextView(this@MainActivity).apply {
                 // Joined rather than concatenated: TVMaze leaves the network blank often enough that
                 // a hardcoded separator left rows reading "TO BE DETERMINED ·" with a dangling dot.
-                text = listOf(show.status, show.network)
-                    .filter { it.isNotBlank() && it != "UNKNOWN" }
-                    .joinToString(" · ")
+                // On FOR YOU this line carries the reason instead of the metadata, because "because
+                // you track Silo" is the single most useful thing a suggestion can say about itself.
+                // Everywhere else it leads with how far along the show is, which is the question a
+                // list of shows most often leaves unanswered.
+                text = reasons[show.tvMazeId] ?: metaLine(show)
+                tag = show.tvMazeId
                 label(9.5f, AppTheme.TextMuted, tracking = 0.2f)
                 maxLines = 1
-            })
+            }
+            textColumn.addView(meta)
             textColumn.addView(TextView(this@MainActivity).apply {
                 text = show.title
                 display(17f)
@@ -769,6 +692,12 @@ class MainActivity : Activity() {
                 setPadding(0, 4.dp, 0, 0)
             })
             row.addView(textColumn)
+            // Fill in the episode code for rows whose source didn't carry one — TRACKED and search
+            // results. Lazily and per row, so no list waits on a per-show request before it can
+            // render; TvMazeApi.schedule is memoized, so scrolling back over a row is free.
+            if (show.latestEpisode == null && reasons.isEmpty()) {
+                loadEpisodeAsync(show, meta)
+            }
 
             row.addView(pillButton(
                 text = if (show.tracked) "TRACKING" else "TRACK",
@@ -817,6 +746,33 @@ class MainActivity : Activity() {
             }
             wrapper.addView(row)
             return wrapper
+        }
+
+        /** `S03E10 · RUNNING · APPLE TV+`, skipping whatever this show has no value for. */
+        private fun metaLine(show: CatalogShow): String = listOf(
+            show.latestEpisode.orEmpty(),
+            show.status,
+            show.network,
+        ).filter { it.isNotBlank() && it != "UNKNOWN" }.joinToString(" · ")
+
+        /**
+         * Resolves how far along a show is, one row at a time.
+         *
+         * The tag check is what makes this safe in a recycling ListView: by the time the lookup
+         * returns, the view may already have been reused for a different show, and writing the
+         * answer into it regardless is the classic way list rows end up captioned with someone
+         * else's data.
+         */
+        private fun loadEpisodeAsync(show: CatalogShow, target: TextView) {
+            val id = show.tvMazeId
+            Thread {
+                val schedule = runCatching { runBlocking { TvMazeApi.schedule(id) } }.getOrNull()
+                val code = (schedule?.previous ?: schedule?.next)?.code ?: return@Thread
+                runOnUiThread {
+                    if (target.tag != id) return@runOnUiThread
+                    target.text = metaLine(show.copy(latestEpisode = code))
+                }
+            }.start()
         }
 
         /**

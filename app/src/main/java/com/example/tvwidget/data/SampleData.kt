@@ -16,15 +16,10 @@ object SampleData {
 
     private val dayFormat = DateTimeFormatter.ofPattern("EEE dd", Locale.US)
     private val dateFormat = DateTimeFormatter.ofPattern("EEE dd MMM", Locale.US)
-    private val logFormat = DateTimeFormatter.ofPattern("dd MMM yy", Locale.US)
 
     fun dayLabel(date: LocalDate): String = date.format(dayFormat).uppercase(Locale.US)
 
     fun dateLabel(date: LocalDate): String = date.format(dateFormat).uppercase(Locale.US)
-
-    /** Entry stamp used by the rewatch log, e.g. `12 JUL 26`. */
-    fun logDateLabel(date: LocalDate = LocalDate.now()): String =
-        date.format(logFormat).uppercase(Locale.US)
 
     private data class Seed(
         val offset: Int,
@@ -74,27 +69,4 @@ object SampleData {
         AnticipatedShow("Pluribus", "NEW SERIES", "APPLE TV+", "24 OCT", 57, 51),
     )
 
-    fun defaultFavorites(today: LocalDate = LocalDate.now()): List<FavoriteEpisode> {
-        val byKey = releases(today).associateBy { it.showTitle to it.episodeCode }
-        fun favorite(title: String, episode: String, fallbackLabel: String) = FavoriteEpisode(
-            showTitle = title,
-            episodeCode = episode,
-            label = byKey[title to episode]?.favoriteLabel() ?: fallbackLabel,
-        )
-        return listOf(
-            favorite("Severance", "S03E01", "APPLE TV+"),
-            favorite("Severance", "S02E07", "THE COLD HARBOR · S2"),
-            favorite("The Bear", "S05E02", "HULU"),
-            favorite("Silo", "S03E04", "APPLE TV+"),
-            favorite("The Last of Us", "S03E05", "HBO"),
-        )
-    }
-
-    fun defaultRewatchLog(today: LocalDate = LocalDate.now()): Map<String, List<String>> = mapOf(
-        "Severance" to listOf(
-            logDateLabel(today.minusDays(47)),
-            logDateLabel(today.minusDays(25)),
-        ),
-        "Silo" to listOf(logDateLabel(today.minusDays(61))),
-    )
 }

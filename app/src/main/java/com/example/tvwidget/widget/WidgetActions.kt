@@ -11,18 +11,22 @@ import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.compose
 import androidx.glance.appwidget.state.updateAppWidgetState
-import com.example.tvwidget.data.FavoriteEpisode
 import com.example.tvwidget.data.Tab
+import com.example.tvwidget.data.TrackedShow
+import com.example.tvwidget.data.TrackedShowsRepository
 import com.example.tvwidget.data.WidgetState
 import com.example.tvwidget.ui.Dimens
+import com.example.tvwidget.work.AnticipatedSyncWorker
 
 /** Parameter keys shared by the widget's action callbacks. */
 object ActionKeys {
     val tab = ActionParameters.Key<String>("tab")
     val showTitle = ActionParameters.Key<String>("show_title")
     val episodeCode = ActionParameters.Key<String>("episode_code")
-    val episodeLabel = ActionParameters.Key<String>("episode_label")
     val imdbId = ActionParameters.Key<String>("imdb_id")
+    val tvMazeId = ActionParameters.Key<Int>("tvmaze_id")
+    val network = ActionParameters.Key<String>("network")
+    val posterUrl = ActionParameters.Key<String>("poster_url")
     val openCatalog = ActionParameters.Key<Boolean>("open_catalog")
 }
 
@@ -115,26 +119,35 @@ class ExpandRowsAction : ActionCallback {
     }
 }
 
+
 /**
- * Toggles the favourite for one specific episode, keyed on show title + episode code. Optimistic:
- * the widget state is the source of truth until a sync writes it back. Unfavoriting can also happen
- * from `MainActivity`'s Catalog > Favorites screen, which mutates this same Glance state directly
- * rather than going through this ActionCallback (an Activity has no `GlanceId`-scoped action to run).
+ * Tracks — or untracks — a show straight from a POPULAR row.
+ *
+ * Without this, following something the widget just recommended meant opening the app, searching for
+ * the title it had just shown you, and tapping TRACK: three steps to act on information already on
+ * screen. The row knows the id; the tap should be enough.
+ *
+ * A sync is kicked off afterwards so the show's episodes reach TODAY without waiting for the daily
+ * run — tracking something and seeing nothing change for a day reads as the button not working.
  */
-class ToggleFavoriteAction : ActionCallback {
+class TrackShowAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        val id = parameters[ActionKeys.tvMazeId] ?: return
         val title = parameters[ActionKeys.showTitle] ?: return
-        val episode = parameters[ActionKeys.episodeCode] ?: return
-        val label = parameters[ActionKeys.episodeLabel].orEmpty()
-        mutate(context, glanceId) {
-            val current = WidgetState.favorites(this)
-            val existing = current.firstOrNull { it.showTitle == title && it.episodeCode == episode }
-            val updated = if (existing != null) {
-                current - existing
-            } else {
-                current + FavoriteEpisode(title, episode, label)
-            }
-            this[WidgetState.FAVORITES] = WidgetState.encodeFavorites(updated)
+        if (TrackedShowsRepository.isTracked(context, id)) {
+            TrackedShowsRepository.remove(context, id)
+        } else {
+            TrackedShowsRepository.add(
+                context,
+                TrackedShow(
+                    tvMazeId = id,
+                    title = title,
+                    network = parameters[ActionKeys.network].orEmpty(),
+                    posterUrl = parameters[ActionKeys.posterUrl]?.ifBlank { null },
+                ),
+            )
         }
+        redrawNow(context, glanceId)
+        AnticipatedSyncWorker.runOnce(context)
     }
 }

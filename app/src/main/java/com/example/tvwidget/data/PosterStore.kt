@@ -28,7 +28,7 @@ import java.net.URL
  *
  * A small process-lifetime [memoryCache] also sits in front of the disk read, since `provideGlance`
  * re-decodes whatever the active tab needs on every single interaction (tab switch, star toggle,
- * rewatch count, ...) — without it, the same handful of PNGs get re-read from disk and re-decoded to
+ * season progress, ...) — without it, the same handful of PNGs get re-read from disk and re-decoded to
  * a fresh [Bitmap] dozens of times in a row for no reason.
  */
 object PosterStore {
