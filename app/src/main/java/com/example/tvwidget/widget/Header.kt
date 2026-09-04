@@ -31,9 +31,9 @@ import com.example.tvwidget.ui.Tokens
 /**
  * The tab switcher: three pills, one row.
  *
- * TODAY and POPULAR are real tabs; CATALOGUE isn't — there's no widget-side content for it, just a
- * button that opens the app's Catalogue screen. It never highlights as selected, since there's no
- * CATALOGUE state to be in.
+ * TODAY and POPULAR are real tabs; CATALOG isn't — there's no widget-side content for it, just a
+ * button that opens the app's Catalog screen. It never highlights as selected, since there's no
+ * CATALOG state to be in.
  *
  * The selected pill is a gold-tinted ember with a gold label rather than a solid gold fill. One of
  * three is selected at all times, so a bright bar would sit permanently across the top of the
@@ -68,11 +68,11 @@ fun Header(selected: Tab, todayCount: Int) {
         )
         Spacer(GlanceModifier.width(5.dp))
         Pill(
-            label = "CATALOGUE",
+            label = "CATALOG",
             selected = false,
             modifier = GlanceModifier.defaultWeight(),
             onClick = actionStartActivity<MainActivity>(
-                actionParametersOf(ActionKeys.openCatalogue to true)
+                actionParametersOf(ActionKeys.openCatalog to true)
             ),
         )
     }

@@ -240,7 +240,7 @@ object Dimens {
      * widget host outright (`TransactionTooLargeException: data parcel size 779984 bytes`), which
      * took the whole widget down rather than just truncating it.
      *
-     * The full list is still fetched and still lives in the Catalogue screen, which is an ordinary
+     * The full list is still fetched and still lives in the Catalog screen, which is an ordinary
      * Activity and has no such ceiling.
      */
     const val MaxWidgetRows = 20

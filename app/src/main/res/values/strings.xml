@@ -12,7 +12,7 @@
     -->
     <string name="preview_tab_today" translatable="false">2 TODAY</string>
     <string name="preview_tab_popular" translatable="false">POPULAR</string>
-    <string name="preview_tab_catalogue" translatable="false">CATALOGUE</string>
+    <string name="preview_tab_catalog" translatable="false">CATALOG</string>
     <string name="preview_hero_meta" translatable="false">TODAY · AIRS TONIGHT</string>
     <string name="preview_hero_title" translatable="false">Severance</string>
     <string name="preview_hero_countdown" translatable="false">4:12:08</string>

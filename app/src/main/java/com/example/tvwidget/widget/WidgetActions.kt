@@ -23,7 +23,7 @@ object ActionKeys {
     val episodeCode = ActionParameters.Key<String>("episode_code")
     val episodeLabel = ActionParameters.Key<String>("episode_label")
     val imdbId = ActionParameters.Key<String>("imdb_id")
-    val openCatalogue = ActionParameters.Key<Boolean>("open_catalogue")
+    val openCatalog = ActionParameters.Key<Boolean>("open_catalog")
 }
 
 /**
@@ -51,7 +51,7 @@ private suspend fun mutate(
  * WorkManager job that would rebuild it. The result was a tab switch that wrote its new state to the
  * datastore and then never appeared — the file's timestamp moved on every tap while the widget sat
  * unchanged, and opening the app was what finally unfroze the process and let the queued redraw run.
- * Which is exactly the symptom: pressing CATALOGUE and coming back "pushed" the switch through.
+ * Which is exactly the symptom: pressing CATALOG and coming back "pushed" the switch through.
  *
  * Composing here removes every one of those moving parts. The work happens inside the broadcast
  * that the tap already started, in a process that is by definition running, and the RemoteViews go
@@ -118,7 +118,7 @@ class ExpandRowsAction : ActionCallback {
 /**
  * Toggles the favourite for one specific episode, keyed on show title + episode code. Optimistic:
  * the widget state is the source of truth until a sync writes it back. Unfavoriting can also happen
- * from `MainActivity`'s Catalogue > Favorites screen, which mutates this same Glance state directly
+ * from `MainActivity`'s Catalog > Favorites screen, which mutates this same Glance state directly
  * rather than going through this ActionCallback (an Activity has no `GlanceId`-scoped action to run).
  */
 class ToggleFavoriteAction : ActionCallback {

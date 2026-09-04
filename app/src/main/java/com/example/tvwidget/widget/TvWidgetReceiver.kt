@@ -8,7 +8,7 @@ import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import com.example.tvwidget.work.AnticipatedSyncWorker
 
 /**
- * Host for [TvWidget]. Placing the first widget schedules the daily premiere/catalogue/poster
+ * Host for [TvWidget]. Placing the first widget schedules the daily premiere/catalog/poster
  * refresh; removing the last one tears it down.
  *
  * There used to also be a per-minute `CountdownTicker` alarm here to keep a live `HH:MM` countdown
@@ -24,7 +24,7 @@ class TvWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         AnticipatedSyncWorker.schedule(context)
-        // Otherwise CATALOGUE and real poster art wouldn't show up until the first daily tick.
+        // Otherwise CATALOG and real poster art wouldn't show up until the first daily tick.
         AnticipatedSyncWorker.runOnce(context)
     }
 

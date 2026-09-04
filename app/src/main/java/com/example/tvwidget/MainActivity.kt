@@ -28,7 +28,7 @@ import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.appwidget.updateAll
 import androidx.glance.state.PreferencesGlanceStateDefinition
-import com.example.tvwidget.data.CatalogueShow
+import com.example.tvwidget.data.CatalogShow
 import com.example.tvwidget.data.FavoriteShow
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.TrackedShow
@@ -48,7 +48,7 @@ import kotlinx.coroutines.runBlocking
 
 /**
  * Host activity. The product is the home-screen widget; this screen exists so the app is
- * launchable, so a title tap has somewhere to land, and so CATALOGUE — search, Tracked, Trending
+ * launchable, so a title tap has somewhere to land, and so CATALOG — search, Tracked, Trending
  * and Favorites — has somewhere to run at all. None of that fits in a `RemoteViews`: no text field
  * for search, no room for Favorites' full detail, no motion.
  *
@@ -58,7 +58,7 @@ import kotlinx.coroutines.runBlocking
 class MainActivity : Activity() {
 
     private lateinit var resultsAdapter: ResultsAdapter
-    private var selectedCatalogueTab = CatalogueTab.TRACKED
+    private var selectedCatalogTab = CatalogTab.TRACKED
 
     /**
      * Bumped every time a tab load starts. A tab's fetch can outlive the tab being on screen —
@@ -67,10 +67,13 @@ class MainActivity : Activity() {
      */
     private var tabToken = 0
 
-    /** The Catalogue result list, so async loaders can animate it in once data actually arrives. */
-    private var catalogueListRef: View? = null
+    /** The Catalog result list, so async loaders can animate it in once data actually arrives. */
+    private var catalogListRef: View? = null
 
-    private enum class CatalogueTab(val label: String) {
+    /** Sets the copy shown when the current list has nothing in it. */
+    private var emptyMessage: (String, String) -> Unit = { _, _ -> }
+
+    private enum class CatalogTab(val label: String) {
         TRACKED("Tracked"),
         TRENDING("Trending"),
         FAVORITES("Favorites"),
@@ -82,10 +85,10 @@ class MainActivity : Activity() {
         val show = intent?.getStringExtra(EXTRA_SHOW_TITLE)
         val episode = intent?.getStringExtra(EXTRA_EPISODE_CODE)
         val imdbId = intent?.getStringExtra(EXTRA_IMDB_ID)?.ifEmpty { null }
-        val openCatalogue = intent?.getBooleanExtra(EXTRA_OPEN_CATALOGUE, false) ?: false
+        val openCatalog = intent?.getBooleanExtra(EXTRA_OPEN_CATALOG, false) ?: false
 
         when {
-            openCatalogue -> setContentView(buildCatalogueScreen())
+            openCatalog -> setContentView(buildCatalogScreen())
             // Tapping a title in the widget opens that show's IMDb page — Glance's
             // actionStartActivity only launches a typed Activity, not an arbitrary Intent, so the
             // widget starts this Activity with the show extras and this is the pass-through that
@@ -98,12 +101,12 @@ class MainActivity : Activity() {
     // -- IMDb ------------------------------------------------------------------------------------
 
     /**
-     * If the id isn't already known (a show tracked before imdbId existed, or any Catalogue row,
+     * If the id isn't already known (a show tracked before imdbId existed, or any Catalog row,
      * which doesn't carry one), this looks it up live rather than falling straight to a text search.
      * A brief delay for one request is a better trade than "this always goes to a search".
      *
      * [onUnresolved] defaults to the widget pass-through's placeholder screen (there's nothing else
-     * on screen there); Catalogue's callers pass a toast instead, since replacing the whole screen
+     * on screen there); Catalog's callers pass a toast instead, since replacing the whole screen
      * over one failed lookup would blow away the tab the user was looking at.
      */
     private fun resolveImdbIdThenOpen(
@@ -144,6 +147,56 @@ class MainActivity : Activity() {
         Toast.makeText(this, "Couldn't open IMDb for that show", Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * Washes a card's leading edge with a colour taken from its own poster.
+     *
+     * A `LayerDrawable` rather than a second view: an overlay stacked on the row would be the child
+     * that receives the touch, and the card is tappable. The wash is kept low and gone by a third of
+     * the way across — past that it stops reading as light on a surface and starts reading as a
+     * coloured panel, which looks like a mistake rather than a decision.
+     */
+    private fun tintRow(row: View, accent: Int, tracked: Boolean) {
+        val radius = 20.dp.toFloat()
+        val base = if (tracked) {
+            AppTheme.liftedSurface(0xFF272017.toInt(), 0xFF1B1713.toInt(), radius)
+        } else {
+            AppTheme.liftedSurface(AppTheme.SurfaceRaised, AppTheme.Surface, radius)
+        }
+        val wash = GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(
+                Color.argb(58, Color.red(accent), Color.green(accent), Color.blue(accent)),
+                Color.TRANSPARENT,
+            ),
+        ).apply { cornerRadius = radius }
+        val layered = android.graphics.drawable.LayerDrawable(arrayOf(base, wash))
+        row.background = android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf(AppTheme.accent(0.16f)),
+            layered,
+            null,
+        )
+    }
+
+    private fun hideKeyboard() {
+        val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+            as? android.view.inputmethod.InputMethodManager
+        imm?.hideSoftInputFromWindow(window.decorView.windowToken, 0)
+    }
+
+    /**
+     * A short confirmation tick. Tracking a show is a state change with a very small visual
+     * footprint — one pill flips — and a tap that changes something should be felt as well as seen.
+     */
+    private fun confirmHaptic(view: View) {
+        view.performHapticFeedback(
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                android.view.HapticFeedbackConstants.CONFIRM
+            } else {
+                android.view.HapticFeedbackConstants.VIRTUAL_KEY
+            }
+        )
+    }
+
     // -- Screens ---------------------------------------------------------------------------------
 
     private fun buildDeepLinkScreen(show: String, episode: String?): View {
@@ -177,8 +230,8 @@ class MainActivity : Activity() {
             setLineSpacing(6.dp.toFloat(), 1f)
             setPadding(0, 14.dp, 0, 0)
         })
-        root.addView(primaryButton("Open catalogue") {
-            setContentView(buildCatalogueScreen())
+        root.addView(primaryButton("Open catalog") {
+            setContentView(buildCatalogScreen())
         }.apply {
             (layoutParams as? LinearLayout.LayoutParams)?.topMargin = 32.dp
         })
@@ -186,7 +239,7 @@ class MainActivity : Activity() {
     }
 
     /**
-     * CATALOGUE. A search field over a segmented control over content:
+     * CATALOG. A search field over a segmented control over content:
      *  - Tracked: only what's currently tracked. Untracking removes the row immediately — a tab whose
      *    point is "what I'm tracking" shouldn't keep showing something that isn't.
      *  - Trending: today's popular currently-running shows. Track/untrack flips the button in place;
@@ -195,20 +248,35 @@ class MainActivity : Activity() {
      *
      * Typing 2+ characters covers whichever tab is showing with search results; clearing restores it.
      */
-    private fun buildCatalogueScreen(): View {
+    private fun buildCatalogScreen(): View {
         val root = screenRoot()
+        // Animates the masthead's collapse and return, and the status line's changes, without any
+        // of it being animated by hand.
+        root.layoutTransition = android.animation.LayoutTransition().apply {
+            setDuration(180L)
+            enableTransitionType(android.animation.LayoutTransition.CHANGING)
+        }
 
         // -- Masthead ------------------------------------------------------------------------
-        root.addView(TextView(this).apply {
-            text = "TV RELEASES"
-            label(10f, AppTheme.Accent, tracking = 0.36f, bold = true)
-            goldLeaf()
-        })
-        root.addView(TextView(this).apply {
-            text = "Catalogue"
-            display(32f)
-            setPadding(0, 6.dp, 0, 0)
-        })
+        //
+        // Grouped so it can leave as one thing. On a phone with the keyboard up, this screen's fixed
+        // chrome — wordmark, title, field, segmented control, status — used to eat roughly 250dp and
+        // leave room for one and a half results. The masthead is the half of that which is pure
+        // identity: worth having when you arrive, worth nothing at all while you are typing.
+        val masthead = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(this@MainActivity).apply {
+                text = "TV RELEASES"
+                label(10f, AppTheme.Accent, tracking = 0.36f, bold = true)
+                goldLeaf()
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Catalog"
+                display(32f)
+                setPadding(0, 6.dp, 0, 0)
+            })
+        }
+        root.addView(masthead)
 
         // -- Search ---------------------------------------------------------------------------
         val input = EditText(this).apply {
@@ -216,13 +284,35 @@ class MainActivity : Activity() {
             setHintTextColor(AppTheme.TextMuted)
             setTextColor(AppTheme.TextPrimary)
             typeface = Typeface.DEFAULT
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
             background = null
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
             maxLines = 1
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            // Enter closes the keyboard rather than doing nothing. The results are already live by
+            // the time it is pressed; what the user wants back at that point is the screen.
+            setOnEditorActionListener { _, _, _ -> hideKeyboard(); true }
         }
-        root.addView(searchField(input))
+
+        // The masthead follows the keyboard, not the text: it leaves the moment the field is
+        // focused, so the results area is already at full height by the time the first character
+        // lands, and comes back when focus goes away and the query is empty.
+        fun setMastheadCollapsed(collapsed: Boolean) {
+            val target = if (collapsed) View.GONE else View.VISIBLE
+            if (masthead.visibility != target) masthead.visibility = target
+        }
+        input.setOnFocusChangeListener { _, hasFocus ->
+            setMastheadCollapsed(hasFocus || input.text.isNotEmpty())
+        }
+
+        root.addView(
+            searchField(input) {
+                input.clearFocus()
+                hideKeyboard()
+                setMastheadCollapsed(false)
+            }
+        )
 
         // -- Segmented control -----------------------------------------------------------------
         val status = TextView(this).apply {
@@ -231,7 +321,7 @@ class MainActivity : Activity() {
         }
         lateinit var showCurrentTab: () -> Unit
         val segmented = segmentedControl { tab ->
-            selectedCatalogueTab = tab
+            selectedCatalogTab = tab
             if (input.text.length < 2) showCurrentTab()
         }
         root.addView(segmented.view)
@@ -254,7 +344,7 @@ class MainActivity : Activity() {
         root.addView(favoritesScroll)
 
         resultsAdapter = ResultsAdapter()
-        val catalogueList = ListView(this).apply {
+        val catalogList = ListView(this).apply {
             adapter = resultsAdapter
             divider = null
             dividerHeight = 0
@@ -265,35 +355,79 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             )
         }
-        root.addView(catalogueList)
-        catalogueListRef = catalogueList
+        // Scrolling is a clear signal that the user is done typing and wants to read. Holding the
+        // keyboard open past that point costs half the screen for nothing.
+        catalogList.setOnScrollListener(object : android.widget.AbsListView.OnScrollListener {
+            override fun onScrollStateChanged(view: android.widget.AbsListView?, state: Int) {
+                if (state == android.widget.AbsListView.OnScrollListener.SCROLL_STATE_TOUCH_SCROLL) {
+                    hideKeyboard()
+                    input.clearFocus()
+                }
+            }
+            override fun onScroll(v: android.widget.AbsListView?, f: Int, vc: Int, t: Int) = Unit
+        })
+        root.addView(catalogList)
+        catalogListRef = catalogList
+
+        // A ListView with nothing in it draws nothing, which is how TRACKED ended up as a status
+        // line floating over a screen of black. ListView.setEmptyView swaps the two automatically,
+        // so every tab gets a real answer instead of a void.
+        val emptyTitle = TextView(this).apply {
+            display(20f, AppTheme.TextSecondary)
+            gravity = Gravity.CENTER
+        }
+        val emptyDetail = TextView(this).apply {
+            label(11.5f, AppTheme.TextMuted, tracking = 0.08f)
+            gravity = Gravity.CENTER
+            setPadding(0, 8.dp, 0, 0)
+        }
+        val emptyView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(24.dp, 40.dp, 24.dp, 24.dp)
+            visibility = View.GONE
+            addView(emptyTitle)
+            addView(emptyDetail)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+        root.addView(emptyView)
+        catalogList.emptyView = emptyView
+        emptyMessage = { title, detail ->
+            emptyTitle.text = title
+            emptyDetail.text = detail
+        }
 
         showCurrentTab = {
-            when (selectedCatalogueTab) {
-                CatalogueTab.TRACKED -> {
+            // A new tab starts at the top. Landing halfway down a different list because the last
+            // one was scrolled there is disorienting in a way nobody ever asks for.
+            catalogList.setSelection(0)
+            when (selectedCatalogTab) {
+                CatalogTab.TRACKED -> {
                     favoritesScroll.visibility = View.GONE
-                    catalogueList.visibility = View.VISIBLE
-                    catalogueList.enterSoftly()
+                    catalogList.visibility = View.VISIBLE
+                    catalogList.enterSoftly()
                     resultsAdapter.removeOnUntrack = true
                     loadTrackedAsync(status)
                 }
-                CatalogueTab.TRENDING -> {
+                CatalogTab.TRENDING -> {
                     favoritesScroll.visibility = View.GONE
-                    catalogueList.visibility = View.VISIBLE
+                    catalogList.visibility = View.VISIBLE
                     // No enterSoftly here: this tab fetches, so the list is empty at this point and
                     // the animation would play on nothing. It runs when the rows land instead.
                     resultsAdapter.removeOnUntrack = false
                     loadTrendingAsync(status)
                 }
-                CatalogueTab.FAVORITES -> {
+                CatalogTab.FAVORITES -> {
                     favoritesScroll.visibility = View.VISIBLE
-                    catalogueList.visibility = View.GONE
+                    catalogList.visibility = View.GONE
                     favoritesScroll.enterSoftly()
                     loadFavoritesAsync(status, favoritesContainer)
                 }
             }
         }
-        segmented.select(selectedCatalogueTab, animate = false)
+        segmented.select(selectedCatalogTab, animate = false)
         showCurrentTab()
 
         // -- Search behaviour --------------------------------------------------------------------
@@ -317,9 +451,27 @@ class MainActivity : Activity() {
                     return
                 }
                 favoritesScroll.visibility = View.GONE
-                catalogueList.visibility = View.VISIBLE
+                catalogList.visibility = View.VISIBLE
                 resultsAdapter.removeOnUntrack = false // a search hit shouldn't vanish on untrack
-                status.text = "SEARCHING"
+
+                // Answer from what is already on the device, immediately, before any request is
+                // even scheduled. The debounce plus a round trip means roughly half a second where
+                // the screen otherwise says SEARCHING and shows nothing; matching the tracked list
+                // locally fills that with real, relevant rows on the very first keystroke. Remote
+                // results replace these when they arrive.
+                val local = TrackedShowsRepository.list(this@MainActivity)
+                    .filter { it.title.contains(query, ignoreCase = true) }
+                    .map {
+                        CatalogShow(it.tvMazeId, it.title, it.network, "TRACKING", it.posterUrl, true, it.imdbId)
+                    }
+                if (local.isNotEmpty()) {
+                    resultsAdapter.submit(local)
+                    status.text = "${local.size} TRACKED · SEARCHING"
+                } else {
+                    resultsAdapter.submitLoading()
+                    status.text = "SEARCHING"
+                }
+
                 val runnable = Runnable {
                     Thread {
                         val results = runCatching { runBlocking { TvMazeApi.search(query) } }
@@ -327,9 +479,18 @@ class MainActivity : Activity() {
                             .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
                         runOnUiThread {
                             if (token != tabToken) return@runOnUiThread // superseded by a keystroke or tab switch
-                            resultsAdapter.submit(results)
-                            catalogueList.enterSoftly()
-                            status.text = if (results.isEmpty()) "NOTHING FOUND" else "${results.size} RESULTS"
+                            if (results.isEmpty() && local.isEmpty()) {
+                                emptyMessage(
+                                    "No show called \"$query\"",
+                                    "Try fewer words, or the original title if the show was renamed locally.",
+                                )
+                                resultsAdapter.submit(emptyList())
+                                status.text = "NOTHING MATCHES \"${query.uppercase()}\""
+                            } else {
+                                resultsAdapter.submit(results.ifEmpty { local })
+                                catalogList.enterSoftly()
+                                status.text = "${results.ifEmpty { local }.size} RESULTS"
+                            }
                         }
                     }.start()
                 }
@@ -347,8 +508,12 @@ class MainActivity : Activity() {
     private fun loadTrackedAsync(status: TextView) {
         tabToken++ // reads from disk, so it lands immediately — but still cancels any pending fetch
         val tracked = TrackedShowsRepository.list(this).map { show ->
-            CatalogueShow(show.tvMazeId, show.title, show.network, "TRACKING", show.posterUrl, tracked = true, show.imdbId)
+            CatalogShow(show.tvMazeId, show.title, show.network, "TRACKING", show.posterUrl, tracked = true, show.imdbId)
         }
+        emptyMessage(
+            "Nothing tracked yet",
+            "Search above, or open Trending, and tap TRACK on anything you want the widget to follow.",
+        )
         resultsAdapter.submit(tracked)
         status.text = if (tracked.isEmpty()) "NOTHING TRACKED YET" else "${tracked.size} TRACKED"
     }
@@ -377,7 +542,7 @@ class MainActivity : Activity() {
             runOnUiThread {
                 if (token != tabToken) return@runOnUiThread // user moved on while this was in flight
                 resultsAdapter.submit(trending)
-                catalogueListRef?.enterSoftly()
+                catalogListRef?.enterSoftly()
                 status.text = when {
                     trending.isEmpty() -> "COULDN'T LOAD TRENDING"
                     else -> "${trending.size} TRENDING"
@@ -500,10 +665,20 @@ class MainActivity : Activity() {
         return card
     }
 
-    // -- Catalogue rows --------------------------------------------------------------------------
+    // -- Catalog rows --------------------------------------------------------------------------
 
     private inner class ResultsAdapter : BaseAdapter() {
-        private var items: List<CatalogueShow> = emptyList()
+        private var items: List<CatalogShow> = emptyList()
+
+        /**
+         * When true the list draws placeholder cards instead of rows.
+         *
+         * A spinner or the word LOADING tells you to wait; skeleton rows tell you what you are
+         * waiting *for*, and the list does not jump when the real content replaces them because the
+         * shape is already correct. They pulse rather than shimmer — a gradient sweeping across a
+         * dark surface reads as a glare artifact, where a slow breath reads as pending.
+         */
+        private var loading = false
 
         /**
          * True only for TRACKED's own listing: untracking there removes the row immediately, since
@@ -512,16 +687,29 @@ class MainActivity : Activity() {
          */
         var removeOnUntrack = false
 
-        fun submit(newItems: List<CatalogueShow>) {
+        fun submit(newItems: List<CatalogShow>) {
             items = newItems
+            loading = false
             notifyDataSetChanged()
         }
 
-        override fun getCount() = items.size
-        override fun getItem(position: Int) = items[position]
-        override fun getItemId(position: Int) = items[position].tvMazeId.toLong()
+        /** Shows placeholder cards until real rows arrive. */
+        fun submitLoading(count: Int = 4) {
+            items = emptyList()
+            loading = true
+            skeletonCount = count
+            notifyDataSetChanged()
+        }
+
+        private var skeletonCount = 4
+
+        override fun getCount() = if (loading) skeletonCount else items.size
+        override fun getItem(position: Int) = if (loading) Unit else items[position]
+        override fun getItemId(position: Int) =
+            if (loading) position.toLong() else items[position].tvMazeId.toLong()
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+            if (loading) return skeletonRow()
             val show = items[position]
 
             // A ListView's children are laid out with AbsListView.LayoutParams, which has no
@@ -566,7 +754,11 @@ class MainActivity : Activity() {
                     .apply { marginStart = 14.dp }
             }
             textColumn.addView(TextView(this@MainActivity).apply {
-                text = "${show.status} · ${show.network}"
+                // Joined rather than concatenated: TVMaze leaves the network blank often enough that
+                // a hardcoded separator left rows reading "TO BE DETERMINED ·" with a dangling dot.
+                text = listOf(show.status, show.network)
+                    .filter { it.isNotBlank() && it != "UNKNOWN" }
+                    .joinToString(" · ")
                 label(9.5f, AppTheme.TextMuted, tracking = 0.2f)
                 maxLines = 1
             })
@@ -590,11 +782,49 @@ class MainActivity : Activity() {
         }
 
         /**
+         * One placeholder card, breathing gently. Same geometry as a real row, so nothing shifts
+         * when the content arrives.
+         */
+        private fun skeletonRow(): View {
+            val wrapper = FrameLayout(this@MainActivity).apply { setPadding(0, 0, 0, 10.dp) }
+            val row = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = AppTheme.liftedSurface(
+                    AppTheme.SurfaceRaised, AppTheme.Surface, 20.dp.toFloat(),
+                )
+                setPadding(12.dp, 12.dp, 14.dp, 12.dp)
+            }
+            fun block(w: Int, h: Int, radius: Float) = View(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(w, h)
+                background = AppTheme.surface(AppTheme.neutral(0.07f), radius)
+            }
+            row.addView(block(60.dp, 90.dp, 10.dp.toFloat()))
+            row.addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { marginStart = 14.dp }
+                addView(block(90.dp, 8.dp, 4f))
+                addView(block(170.dp, 15.dp, 5f).apply {
+                    (layoutParams as LinearLayout.LayoutParams).topMargin = 9.dp
+                })
+            })
+            android.animation.ObjectAnimator.ofFloat(row, "alpha", 0.45f, 0.9f).apply {
+                duration = 780L
+                repeatMode = android.animation.ValueAnimator.REVERSE
+                repeatCount = android.animation.ValueAnimator.INFINITE
+                start()
+            }
+            wrapper.addView(row)
+            return wrapper
+        }
+
+        /**
          * Loads through [PosterStore] — the same on-disk cache the widget uses — so a poster fetched
          * once never blanks out again on a later visit. An in-memory map scoped to this Activity
          * (what this used to be) was thrown away every time the screen closed.
          */
-        private fun loadPosterAsync(show: CatalogueShow, target: ImageView) {
+        private fun loadPosterAsync(show: CatalogShow, target: ImageView) {
             target.setImageDrawable(null)
             val key = PosterStore.keyFor(show.title)
             Thread {
@@ -604,14 +834,20 @@ class MainActivity : Activity() {
                     }
                     PosterStore.loadBitmapsBlocking(this@MainActivity, listOf(key))[key]
                 }
+                val accent = PosterStore.loadAccentsBlocking(this@MainActivity, listOf(key))[key]
                 if (bitmap != null) runOnUiThread {
                     target.setImageBitmap(bitmap)
                     target.enterSoftly()
+                    // The same trick the widget's rows use, carried into the app so the two read as
+                    // one product: each card is washed from its leading edge with the dominant
+                    // colour of its own artwork, so a list of shows looks like a list of different
+                    // shows rather than repeated furniture.
+                    if (accent != null) (target.parent as? View)?.let { tintRow(it, accent, show.tracked) }
                 }
             }.start()
         }
 
-        private fun toggleTrack(show: CatalogueShow, button: TextView) {
+        private fun toggleTrack(show: CatalogShow, button: TextView) {
             val nowTracked = !show.tracked
             if (nowTracked) {
                 TrackedShowsRepository.add(
@@ -629,6 +865,7 @@ class MainActivity : Activity() {
             }
             notifyDataSetChanged()
             stylePill(button, text = if (nowTracked) "TRACKING" else "TRACK", active = nowTracked)
+            confirmHaptic(button)
             AnticipatedSyncWorker.runOnce(this@MainActivity)
         }
     }
@@ -648,27 +885,66 @@ class MainActivity : Activity() {
         )
     }
 
-    /** The search field: a soft capsule with a leading glyph, no underline, gold caret-adjacent hint. */
-    private fun searchField(input: EditText): View = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        background = AppTheme.surface(
-            color = AppTheme.Surface,
-            radius = 26.dp.toFloat(),
-            strokeColor = AppTheme.neutral(0.07f),
-        )
-        setPadding(18.dp, 12.dp, 18.dp, 12.dp)
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = 22.dp }
-
-        addView(TextView(this@MainActivity).apply {
-            text = "⌕"
-            setTextColor(AppTheme.Accent)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-            setPadding(0, 0, 12.dp, 0)
+    /**
+     * The search field: a soft capsule with a leading glyph, a clear button, and no underline.
+     *
+     * Deliberately large. The previous version set 15sp text inside a shallow capsule, which made
+     * the one control on this screen you actually type into the smallest thing on it — and it read
+     * as a caption rather than an input. Type at 18sp in a 56dp-tall capsule is a search field; the
+     * old one was a label that happened to accept text.
+     *
+     * The clear button matters more than it looks: without it, correcting a search on a phone means
+     * holding backspace, and the only other way back to the tab you were browsing is deleting every
+     * character one at a time.
+     */
+    private fun searchField(input: EditText, onClear: () -> Unit): View {
+        val clear = TextView(this).apply {
+            text = "✕"
+            setTextColor(AppTheme.TextMuted)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            val touch = 40.dp
+            layoutParams = LinearLayout.LayoutParams(touch, touch)
+            background = AppTheme.tappable(
+                AppTheme.surface(Color.TRANSPARENT, touch / 2f),
+                AppTheme.neutral(0.10f),
+            )
+            setOnClickListener {
+                input.setText("")
+                onClear()
+            }
+        }
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun afterTextChanged(editable: Editable?) {
+                clear.visibility = if (editable.isNullOrEmpty()) View.GONE else View.VISIBLE
+            }
         })
-        addView(input)
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = AppTheme.surface(
+                color = AppTheme.Surface,
+                radius = 28.dp.toFloat(),
+                strokeColor = AppTheme.neutral(0.07f),
+            )
+            setPadding(18.dp, 4.dp, 8.dp, 4.dp)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 56.dp
+            ).apply { topMargin = 18.dp }
+
+            addView(TextView(this@MainActivity).apply {
+                text = "⌕"
+                setTextColor(AppTheme.Accent)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 23f)
+                setPadding(0, 0, 12.dp, 0)
+            })
+            addView(input)
+            addView(clear)
+        }
     }
 
     /**
@@ -680,8 +956,8 @@ class MainActivity : Activity() {
      * on the screen, and the slide is the one animation that carries actual meaning here — it shows
      * where you came from and where you landed.
      */
-    private fun segmentedControl(onSelect: (CatalogueTab) -> Unit): Segmented {
-        val tabs = CatalogueTab.entries
+    private fun segmentedControl(onSelect: (CatalogTab) -> Unit): Segmented {
+        val tabs = CatalogTab.entries
         val inset = 4.dp
 
         val indicator = View(this).apply {
@@ -741,13 +1017,13 @@ class MainActivity : Activity() {
         val view: View,
         private val indicator: View,
         private val labels: List<TextView>,
-        private val tabs: List<CatalogueTab>,
+        private val tabs: List<CatalogTab>,
     ) {
         var segmentWidth: Int = 0
-        var current: CatalogueTab = CatalogueTab.TRACKED
+        var current: CatalogTab = CatalogTab.TRACKED
             private set
 
-        fun select(tab: CatalogueTab, animate: Boolean = true) {
+        fun select(tab: CatalogTab, animate: Boolean = true) {
             current = tab
             val index = tabs.indexOf(tab).coerceAtLeast(0)
             val target = (segmentWidth * index).toFloat()
@@ -832,7 +1108,7 @@ class MainActivity : Activity() {
         const val EXTRA_SHOW_TITLE = "show_title"
         const val EXTRA_EPISODE_CODE = "episode_code"
         const val EXTRA_IMDB_ID = "imdb_id"
-        const val EXTRA_OPEN_CATALOGUE = "open_catalogue"
+        const val EXTRA_OPEN_CATALOG = "open_catalog"
         private const val SEARCH_DEBOUNCE_MS = 300L
     }
 }

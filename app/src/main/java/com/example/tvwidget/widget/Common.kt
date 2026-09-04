@@ -176,7 +176,7 @@ fun EmptyState(headline: String, detail: String) {
             .padding(horizontal = 10.dp, vertical = 18.dp)
             .clickable(
                 actionStartActivity<MainActivity>(
-                    actionParametersOf(ActionKeys.openCatalogue to true)
+                    actionParametersOf(ActionKeys.openCatalog to true)
                 )
             ),
     ) {
@@ -193,7 +193,7 @@ fun EmptyState(headline: String, detail: String) {
         )
         Spacer(GlanceModifier.height(9.dp))
         Text(
-            text = "OPEN CATALOGUE",
+            text = "OPEN CATALOG",
             style = Tokens.label(Dimens.statusSize() + 1.5f, Tokens.Accent),
             maxLines = 1,
         )

@@ -18,7 +18,7 @@ import kotlinx.serialization.json.Json
  *
  * FAVORITES/REWATCH_LOG live here rather than in [TrackedShowsRepository] because they're written
  * from the widget (TODAY's star toggle) but also read — and, for unfavoriting, written — from
- * `MainActivity`'s Catalogue screen, via `getAppWidgetState`/`updateAppWidgetState` against this
+ * `MainActivity`'s Catalog screen, via `getAppWidgetState`/`updateAppWidgetState` against this
  * same Glance `DataStore`.
  */
 object WidgetState {

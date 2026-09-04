@@ -5,7 +5,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 /**
- * Shows the user added from CATALOGUE. This lives app-wide in plain [android.content.SharedPreferences]
+ * Shows the user added from CATALOG. This lives app-wide in plain [android.content.SharedPreferences]
  * rather than in Glance's per-widget-instance `DataStore`, because it has to be reachable from
  * [com.example.tvwidget.MainActivity] (the search screen), which has no `GlanceId` to write through.
  *
@@ -15,6 +15,12 @@ import kotlinx.serialization.json.Json
  */
 object TrackedShowsRepository {
 
+    /**
+     * Deliberately still spelled the old way. This is the on-disk name of the preferences file that
+     * holds every show the user tracks, and renaming it does not migrate anything — it silently
+     * points at a new, empty file and the user's list is simply gone. Renaming the product's
+     * spelling to "Catalog" briefly did exactly that. Storage keys are not cosmetic.
+     */
     private const val PREFS_NAME = "catalogue_store"
     private const val KEY_TRACKED = "tracked_shows"
 
