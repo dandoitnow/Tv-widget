@@ -11,6 +11,8 @@
   previewImage stays declared alongside it for Android 11 and below, which has no previewLayout.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="NestedWeights"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -107,7 +109,7 @@
                         android:fontFamily="sans-serif-medium"
                         android:text="@string/preview_hero_meta"
                         android:textColor="#D8B45F"
-                        android:textSize="9sp" />
+                        android:textSize="11sp" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -157,7 +159,7 @@
                         android:fontFamily="sans-serif-medium"
                         android:text="@string/preview_row_meta"
                         android:textColor="#85EDE6DA"
-                        android:textSize="9sp" />
+                        android:textSize="11sp" />
 
                     <TextView
                         android:layout_width="wrap_content"

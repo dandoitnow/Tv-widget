@@ -2,8 +2,15 @@
 <!--
   5 columns x 2 rows. The design canvas is 360 x 152dp; minWidth/minHeight are the smaller floor a
   launcher may hand us, and the widget is resizable in both directions from there.
+
+  targetCellWidth/Height and previewLayout are API 31+ only. That is deliberate rather than an
+  oversight: each one degrades cleanly on older releases (to minWidth/minHeight and previewImage
+  respectively), so the newer attributes are declared unconditionally instead of duplicating this
+  file into an xml-v31 variant to say the same thing twice.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="UnusedAttribute"
     android:minWidth="320dp"
     android:minHeight="110dp"
     android:targetCellWidth="5"

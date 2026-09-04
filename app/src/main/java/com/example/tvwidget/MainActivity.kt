@@ -20,21 +20,14 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.glance.appwidget.GlanceAppWidgetManager
-import androidx.glance.appwidget.state.getAppWidgetState
-import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.appwidget.updateAll
-import androidx.glance.state.PreferencesGlanceStateDefinition
 import com.example.tvwidget.data.CatalogShow
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.Recommender
 import com.example.tvwidget.data.TrackedShow
 import com.example.tvwidget.data.TrackedShowsRepository
 import com.example.tvwidget.data.TvMazeApi
-import com.example.tvwidget.data.WidgetState
 import com.example.tvwidget.ui.AppTheme
 import com.example.tvwidget.ui.AppTheme.clipToRoundedRect
 import com.example.tvwidget.ui.AppTheme.display
@@ -42,9 +35,13 @@ import com.example.tvwidget.ui.AppTheme.dp
 import com.example.tvwidget.ui.AppTheme.enterSoftly
 import com.example.tvwidget.ui.AppTheme.goldLeaf
 import com.example.tvwidget.ui.AppTheme.label
-import com.example.tvwidget.widget.TvWidget
 import com.example.tvwidget.work.AnticipatedSyncWorker
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Host activity. The product is the home-screen widget; this screen exists so the app is
@@ -72,6 +69,24 @@ class MainActivity : Activity() {
 
     /** Sets the copy shown when the current list has nothing in it. */
     private var emptyMessage: (String, String) -> Unit = { _, _ -> }
+
+    /**
+     * Where every background load on this screen runs.
+     *
+     * This replaced a `Thread { runBlocking { ... } }` at each call site, which was wrong three ways:
+     * it parked a whole platform thread per request just to block it on a coroutine, it could not be
+     * cancelled, and each thread held a reference to this Activity for as long as its request took —
+     * so leaving the screen mid-search leaked it until the network gave up.
+     *
+     * Cancelled in [onDestroy], which also makes the in-flight replies stop arriving at views that
+     * are no longer on screen.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
 
     private enum class CatalogTab(val label: String) {
         TRACKED("Tracked"),
@@ -119,12 +134,10 @@ class MainActivity : Activity() {
             if (!openImdb(show, episode, knownImdbId)) onUnresolved()
             return
         }
-        Thread {
-            val resolved = runCatching { runBlocking { TvMazeApi.imdbIdFor(show) } }.getOrNull()
-            runOnUiThread {
-                if (!openImdb(show, episode, resolved)) onUnresolved()
-            }
-        }.start()
+        scope.launch {
+            val resolved = attempt { TvMazeApi.imdbIdFor(show) }
+            if (!openImdb(show, episode, resolved)) onUnresolved()
+        }
     }
 
     /**
@@ -175,6 +188,23 @@ class MainActivity : Activity() {
             layered,
             null,
         )
+    }
+
+    /**
+     * Runs a suspending call, returning null if it fails — but never swallowing cancellation.
+     *
+     * `runCatching` catches `Throwable`, and `CancellationException` is a `Throwable`. Wrapping a
+     * suspend call in it therefore breaks structured concurrency: when [scope] is cancelled the
+     * coroutine's own cancellation signal is caught and discarded, and the code carries on to touch
+     * views belonging to an Activity that is going away. It is an easy mistake to make and an
+     * unpleasant one to debug, because it only misbehaves on the path where the user leaves early.
+     */
+    private suspend fun <T> attempt(block: suspend () -> T): T? = try {
+        block()
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (failure: Throwable) {
+        null
     }
 
     private fun hideKeyboard() {
@@ -292,7 +322,18 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             // Enter closes the keyboard rather than doing nothing. The results are already live by
             // the time it is pressed; what the user wants back at that point is the screen.
-            setOnEditorActionListener { _, _, _ -> hideKeyboard(); true }
+            // Consume only the action this field declares. Returning true unconditionally swallows
+            // every other editor action the IME might send — Next, Done, an attached keyboard's
+            // Enter — and telling the system "handled" for something you did not handle is how
+            // fields end up silently ignoring hardware keyboards.
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                    hideKeyboard()
+                    true
+                } else {
+                    false
+                }
+            }
         }
 
         // The masthead follows the keyboard, not the text: it leaves the moment the field is
@@ -455,12 +496,11 @@ class MainActivity : Activity() {
                 }
 
                 val runnable = Runnable {
-                    Thread {
-                        val results = runCatching { runBlocking { TvMazeApi.search(query) } }
-                            .getOrDefault(emptyList())
+                    scope.launch {
+                        val results = (attempt { TvMazeApi.search(query) } ?: emptyList())
                             .map { it.copy(tracked = TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId)) }
-                        runOnUiThread {
-                            if (token != tabToken) return@runOnUiThread // superseded by a keystroke or tab switch
+                        run {
+                            if (token != tabToken) return@launch // superseded by a keystroke or tab switch
                             if (results.isEmpty() && local.isEmpty()) {
                                 emptyMessage(
                                     "No show called \"$query\"",
@@ -474,7 +514,7 @@ class MainActivity : Activity() {
                                 status.text = "${results.ifEmpty { local }.size} RESULTS"
                             }
                         }
-                    }.start()
+                    }
                 }
                 pendingSearch = runnable
                 debounceHandler.postDelayed(runnable, SEARCH_DEBOUNCE_MS)
@@ -525,11 +565,11 @@ class MainActivity : Activity() {
         )
         resultsAdapter.submitLoading()
         status.text = "FINDING MATCHES"
-        Thread {
-            val suggestions = runCatching { runBlocking { Recommender.forTracked(this@MainActivity, tracked) } }
-                .getOrDefault(emptyList())
-            runOnUiThread {
-                if (token != tabToken) return@runOnUiThread
+        scope.launch {
+            val suggestions = attempt { Recommender.forTracked(this@MainActivity, tracked) }
+                ?: emptyList()
+            run {
+                if (token != tabToken) return@launch
                 resultsAdapter.submit(
                     suggestions.map { it.show },
                     reasons = suggestions.associate { it.show.tvMazeId to it.reason },
@@ -541,7 +581,7 @@ class MainActivity : Activity() {
                     "${suggestions.size} FOR YOU"
                 }
             }
-        }.start()
+        }
     }
 
     /**
@@ -562,11 +602,11 @@ class MainActivity : Activity() {
         // you already follow, the exact opposite of what this tab is for.
         resultsAdapter.submit(emptyList())
         status.text = "LOADING"
-        Thread {
-            val trending = runCatching { runBlocking { TvMazeApi.browse() } }.getOrDefault(emptyList())
+        scope.launch {
+            val trending = (attempt { TvMazeApi.browse() } ?: emptyList())
                 .filterNot { TrackedShowsRepository.isTracked(this@MainActivity, it.tvMazeId) }
-            runOnUiThread {
-                if (token != tabToken) return@runOnUiThread // user moved on while this was in flight
+            run {
+                if (token != tabToken) return@launch // user moved on while this was in flight
                 resultsAdapter.submit(trending)
                 catalogListRef?.enterSoftly()
                 status.text = when {
@@ -574,7 +614,7 @@ class MainActivity : Activity() {
                     else -> "${trending.size} TRENDING"
                 }
             }
-        }.start()
+        }
     }
 
     // -- Catalog rows --------------------------------------------------------------------------
@@ -765,14 +805,12 @@ class MainActivity : Activity() {
          */
         private fun loadEpisodeAsync(show: CatalogShow, target: TextView) {
             val id = show.tvMazeId
-            Thread {
-                val schedule = runCatching { runBlocking { TvMazeApi.schedule(id) } }.getOrNull()
-                val code = (schedule?.previous ?: schedule?.next)?.code ?: return@Thread
-                runOnUiThread {
-                    if (target.tag != id) return@runOnUiThread
-                    target.text = metaLine(show.copy(latestEpisode = code))
-                }
-            }.start()
+            scope.launch {
+                val schedule = attempt { TvMazeApi.schedule(id) }
+                val code = (schedule?.previous ?: schedule?.next)?.code ?: return@launch
+                if (target.tag != id) return@launch
+                target.text = metaLine(show.copy(latestEpisode = code))
+            }
         }
 
         /**
@@ -783,15 +821,15 @@ class MainActivity : Activity() {
         private fun loadPosterAsync(show: CatalogShow, target: ImageView) {
             target.setImageDrawable(null)
             val key = PosterStore.keyFor(show.title)
-            Thread {
-                val bitmap = runBlocking {
+            scope.launch {
+                val (bitmap, accent) = withContext(Dispatchers.IO) {
                     if (!PosterStore.has(this@MainActivity, key)) {
                         PosterStore.ensureCached(this@MainActivity, key, show.posterUrl)
                     }
-                    PosterStore.loadBitmapsBlocking(this@MainActivity, listOf(key))[key]
+                    PosterStore.loadBitmapsBlocking(this@MainActivity, listOf(key))[key] to
+                        PosterStore.loadAccentsBlocking(this@MainActivity, listOf(key))[key]
                 }
-                val accent = PosterStore.loadAccentsBlocking(this@MainActivity, listOf(key))[key]
-                if (bitmap != null) runOnUiThread {
+                if (bitmap != null) {
                     target.setImageBitmap(bitmap)
                     target.enterSoftly()
                     // The same trick the widget's rows use, carried into the app so the two read as
@@ -800,7 +838,7 @@ class MainActivity : Activity() {
                     // shows rather than repeated furniture.
                     if (accent != null) (target.parent as? View)?.let { tintRow(it, accent, show.tracked) }
                 }
-            }.start()
+            }
         }
 
         private fun toggleTrack(show: CatalogShow, button: TextView) {
@@ -1042,23 +1080,6 @@ class MainActivity : Activity() {
         setOnClickListener { onClick() }
     }
 
-    /** Empty states get a voice rather than a shrug — a serif line and one plain sentence under it. */
-    private fun emptyState(title: String, detail: String): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER_HORIZONTAL
-        setPadding(24.dp, 48.dp, 24.dp, 24.dp)
-        addView(TextView(this@MainActivity).apply {
-            this.text = title
-            display(20f, AppTheme.TextSecondary)
-            gravity = Gravity.CENTER
-        })
-        addView(TextView(this@MainActivity).apply {
-            this.text = detail
-            label(11.5f, AppTheme.TextMuted, tracking = 0.08f)
-            gravity = Gravity.CENTER
-            setPadding(0, 8.dp, 0, 0)
-        })
-    }
 
     companion object {
         const val EXTRA_SHOW_TITLE = "show_title"

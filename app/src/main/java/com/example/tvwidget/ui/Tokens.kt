@@ -82,8 +82,6 @@ object Tokens {
     /** Gutter from the widget's edge to its content. Generous on purpose: space is the luxury. */
     val EdgeInset = 12.dp
 
-    /** Air between rows, replacing the old hairline rules. */
-    val RowGap = 5.dp
 
     val RowPaddingHorizontal = 12.dp
 

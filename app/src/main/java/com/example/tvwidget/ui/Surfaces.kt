@@ -35,7 +35,24 @@ import android.graphics.Color as AndroidColor
  */
 object Surfaces {
 
-    private val cache = Collections.synchronizedMap(HashMap<String, Bitmap>())
+    /**
+     * How many generated surfaces are kept. Bounded, and that matters more than it looks: row
+     * surfaces are keyed partly by the dominant colour of a poster, so the number of distinct keys
+     * grows with the number of distinct shows the widget has ever drawn — not with the number it is
+     * drawing. An unbounded map here leaks for the life of the process.
+     *
+     * Generously above what any one redraw needs (a page of rows, two size breakpoints, the ground,
+     * the spine), so the cache still hits on everything currently on screen.
+     */
+    private const val MAX_CACHED_SURFACES = 64
+
+    // Access-ordered, so eviction drops whatever has gone longest without being drawn.
+    private val cache = Collections.synchronizedMap(
+        object : LinkedHashMap<String, Bitmap>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>) =
+                size > MAX_CACHED_SURFACES
+        }
+    )
 
     private fun cached(key: String, build: () -> Bitmap): Bitmap {
         cache[key]?.let { return it }

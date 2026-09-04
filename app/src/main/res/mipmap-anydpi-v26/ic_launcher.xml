@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lint flags the -v26 qualifier as redundant against minSdk 26, and acting on that is wrong here:
+  AAPT does not resolve <adaptive-icon> from a plain mipmap-anydpi folder, so "merging" the two
+  removes the launcher icon from the build entirely. The qualifier stays.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />

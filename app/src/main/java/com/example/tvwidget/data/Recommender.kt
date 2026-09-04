@@ -54,17 +54,26 @@ object Recommender {
         if (profile.isEmpty()) return@withContext emptyList()
 
         val trackedIds = tracked.map { it.tvMazeId }.toSet()
-        val candidates = runCatching { TvMazeApi.browse(limit = 400) }.getOrDefault(emptyList())
+        // try/catch rather than runCatching: runCatching would also swallow CancellationException,
+        // which is how a cancelled coroutine tells its children to stop.
+        val candidates = try {
+            TvMazeApi.browse(limit = 400)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Throwable) {
+            emptyList()
+        }
 
+        // Scored once and carried, rather than scored to filter and scored again to sort. The
+        // duplicate call was cheap but it also let the two diverge, which is the kind of bug that
+        // only ever shows up as "the ordering looks slightly wrong".
         candidates
             .filter { it.tvMazeId !in trackedIds && it.genres.isNotEmpty() }
-            .mapNotNull { candidate ->
-                val score = score(candidate, profile)
-                if (score <= 0) return@mapNotNull null
-                Suggestion(candidate, reasonFor(candidate, withGenres))
-            }
-            .sortedByDescending { score(it.show, profile) }
+            .map { candidate -> candidate to score(candidate, profile) }
+            .filter { (_, score) -> score > 0 }
+            .sortedByDescending { (_, score) -> score }
             .take(limit)
+            .map { (candidate, _) -> Suggestion(candidate, reasonFor(candidate, withGenres)) }
     }
 
     /**
@@ -107,8 +116,13 @@ object Recommender {
         val resolved = tracked.map { show ->
             async {
                 if (show.genres.isNotEmpty()) return@async show
-                val genres = runCatching { TvMazeApi.schedule(show.tvMazeId).genres }
-                    .getOrDefault(emptyList())
+                val genres = try {
+                    TvMazeApi.schedule(show.tvMazeId).genres
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Throwable) {
+                    emptyList()
+                }
                 if (genres.isEmpty()) show else show.copy(genres = genres)
             }
         }.awaitAll()
