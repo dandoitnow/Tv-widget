@@ -175,12 +175,14 @@ class MainActivity : Activity() {
         } else {
             AppTheme.liftedSurface(AppTheme.SurfaceRaised, AppTheme.Surface, radius)
         }
+        // Three stops, not two. A two-colour gradient fades linearly across the *whole* card, so it
+        // was still a third of its strength at the midpoint and the rows read as solid panels of
+        // colour rather than as a surface catching light from the artwork beside it. A third stop
+        // pinned transparent at the midpoint puts the wash where it belongs: the leading edge.
+        val lit = Color.argb(52, Color.red(accent), Color.green(accent), Color.blue(accent))
         val wash = GradientDrawable(
             GradientDrawable.Orientation.LEFT_RIGHT,
-            intArrayOf(
-                Color.argb(58, Color.red(accent), Color.green(accent), Color.blue(accent)),
-                Color.TRANSPARENT,
-            ),
+            intArrayOf(lit, Color.TRANSPARENT, Color.TRANSPARENT),
         ).apply { cornerRadius = radius }
         val layered = android.graphics.drawable.LayerDrawable(arrayOf(base, wash))
         row.background = android.graphics.drawable.RippleDrawable(
@@ -723,6 +725,10 @@ class MainActivity : Activity() {
                 tag = show.tvMazeId
                 label(9.5f, AppTheme.TextMuted, tracking = 0.2f)
                 maxLines = 1
+                // Ellipsize rather than hard-clip. maxLines alone cuts at the column edge with no
+                // mark, so an overrun looks like the text simply ends — which is exactly how a
+                // truncated line goes unnoticed as a bug.
+                ellipsize = android.text.TextUtils.TruncateAt.END
             }
             textColumn.addView(meta)
             textColumn.addView(TextView(this@MainActivity).apply {
