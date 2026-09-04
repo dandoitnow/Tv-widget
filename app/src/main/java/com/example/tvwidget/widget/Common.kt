@@ -3,16 +3,21 @@ package com.example.tvwidget.widget
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.glance.ColorFilter
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.action.Action
+import androidx.glance.action.actionParametersOf
+import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
+import androidx.glance.layout.Column
+import androidx.glance.layout.Spacer
 import androidx.glance.layout.ContentScale
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -21,6 +26,7 @@ import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
+import com.example.tvwidget.MainActivity
 import com.example.tvwidget.R
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.ui.Dimens
@@ -54,6 +60,7 @@ fun RowSurface(
     today: Boolean = false,
     depth: Int = 0,
     edgeAccent: Int? = null,
+    hero: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Box(modifier = GlanceModifier.fillMaxWidth().padding(bottom = Dimens.rowGap())) {
@@ -62,7 +69,7 @@ fun RowSurface(
                 .fillMaxWidth()
                 .cornerRadiusCompat(Tokens.RadiusRow)
                 .background(
-                    ImageProvider(Surfaces.row(today = today, depth = depth, accent = edgeAccent)),
+                    ImageProvider(Surfaces.row(today = today, depth = depth, accent = edgeAccent, hero = hero)),
                     contentScale = ContentScale.FillBounds,
                 ),
         ) {
@@ -86,21 +93,40 @@ fun Poster(
     dimmed: Boolean = false,
     width: Dp = Dimens.posterWidth(),
     height: Dp = Dimens.posterHeight(),
+    behind: List<Bitmap> = emptyList(),
 ) {
     val bitmap = posters[PosterStore.keyFor(title)]
-    val shape = GlanceModifier.size(width, height).cornerRadiusCompat(Tokens.RadiusPoster)
 
     if (bitmap != null) {
+        // No corner clip. The shape is baked into the art itself as a squircle — continuous
+        // curvature rather than the circular arc `cornerRadius` gives — and clipping a circle over
+        // the top of it would simply shave the corners back off.
+        val art = if (behind.isEmpty()) {
+            bitmap
+        } else {
+            Surfaces.heroStack(bitmap, behind, cacheKey = title)
+        }
         Image(
-            provider = ImageProvider(bitmap),
+            provider = ImageProvider(art),
             contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = shape,
+            contentScale = ContentScale.Fit,
+            modifier = GlanceModifier.size(
+                if (behind.isEmpty()) width else width * STACK_WIDTH_FACTOR,
+                height,
+            ),
         )
     } else {
-        Box(modifier = shape.background(ImageProvider(R.drawable.poster_placeholder))) {}
+        Box(
+            modifier = GlanceModifier
+                .size(width, height)
+                .cornerRadiusCompat(Tokens.RadiusPoster)
+                .background(ImageProvider(R.drawable.poster_placeholder)),
+        ) {}
     }
 }
+
+/** Matches the extra width [Surfaces.heroStack] adds for the cards fanned behind the hero. */
+private const val STACK_WIDTH_FACTOR = 1.34f
 
 /**
  * The control that ends a truncated list: reveals another page of rows.
@@ -132,6 +158,45 @@ fun ShowMoreRow(remaining: Int) {
                 maxLines = 1,
             )
         }
+    }
+}
+
+/**
+ * What the widget shows when it has nothing to show.
+ *
+ * The alternative was returning nothing at all, which left an empty rectangle on the home screen and
+ * no way to tell a widget with no releases from a widget that had broken. An empty state that names
+ * its own emptiness and points somewhere is the difference between quiet and dead.
+ */
+@Composable
+fun EmptyState(headline: String, detail: String) {
+    Column(
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 18.dp)
+            .clickable(
+                actionStartActivity<MainActivity>(
+                    actionParametersOf(ActionKeys.openCatalogue to true)
+                )
+            ),
+    ) {
+        Text(
+            text = headline,
+            style = Tokens.display(Dimens.TitleSize - 2f, Tokens.TextSecondary),
+            maxLines = 1,
+        )
+        Spacer(GlanceModifier.height(5.dp))
+        Text(
+            text = detail,
+            style = Tokens.label(Dimens.metaSize(), Tokens.TextTertiary),
+            maxLines = 2,
+        )
+        Spacer(GlanceModifier.height(9.dp))
+        Text(
+            text = "OPEN CATALOGUE",
+            style = Tokens.label(Dimens.statusSize() + 1.5f, Tokens.Accent),
+            maxLines = 1,
+        )
     }
 }
 

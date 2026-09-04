@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The selected tab pill. Deliberately *not* a solid gold fill: one of three pills is selected at all
+  times, so a bright bar would sit across the top of the widget permanently and read loud rather
+  than expensive. This is a gold-tinted ember instead — the selection is felt as warmth, and the
+  label itself (drawn in full accent) carries the actual signal. The two-stop gradient keeps the
+  gold from looking like flat paint.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#4A3A1C"
+        android:endColor="#2E2413"
+        android:type="linear" />
+    <corners android:radius="999dp" />
+</shape>

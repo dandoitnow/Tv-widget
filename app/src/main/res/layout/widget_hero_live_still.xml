@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The no-motion variant of widget_hero_live, used when the system animation scale is zero.
+
+  Someone who has turned animations off across their device has said something clear, and a widget
+  that keeps cross-fading anyway is overriding a system-wide accessibility setting because it thinks
+  its own animation is special. It is not. Same layout and same ids, no autoStart and no transitions
+  - the flipper shows its first child and stays there.
+
+  The Chronometer, where present, still ticks: a countdown is information, not decoration.
+-->
+<ViewFlipper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@id/hero_flipper"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:autoStart="false"
+    android:measureAllChildren="true">
+
+    <Chronometer
+        android:id="@id/hero_primary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:gravity="end"
+        android:maxLines="1"
+        android:fontFamily="monospace"
+        android:includeFontPadding="false"
+        android:textColor="#F3EDE3"
+        android:textSize="17sp" />
+
+    <TextView
+        android:id="@id/hero_secondary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:gravity="end"
+        android:maxLines="1"
+        android:fontFamily="sans-serif-medium"
+        android:includeFontPadding="false"
+        android:textColor="#D8B45F"
+        android:textSize="13sp" />
+</ViewFlipper>

@@ -3,6 +3,16 @@ package com.example.tvwidget.data
 import kotlinx.serialization.Serializable
 
 /**
+ * Weekday abbreviation to full name, for [Release.humanDay]. A top-level value rather than a
+ * companion on [Release], because `@Serializable` generates its own `Companion` and a private one
+ * would collide with it.
+ */
+private val WEEKDAY_NAMES = mapOf(
+    "MON" to "MONDAY", "TUE" to "TUESDAY", "WED" to "WEDNESDAY", "THU" to "THURSDAY",
+    "FRI" to "FRIDAY", "SAT" to "SATURDAY", "SUN" to "SUNDAY",
+)
+
+/**
  * Which tab the widget is showing. Persisted by [name].
  *
  * CATALOGUE isn't one of these — there's no widget-side content for it, just a header button that
@@ -46,6 +56,9 @@ data class Release(
      * time (bundled sample rows), which simply falls back to the static `IN 3D` label.
      */
     val airEpochMillis: Long? = null,
+    /** Episode number within its season, and how many that season holds. Drives the progress bar. */
+    val episodeNumber: Int = 0,
+    val seasonEpisodeCount: Int = 0,
 ) {
     val isToday: Boolean get() = dayOffset == 0
     val hasAired: Boolean get() = dayOffset < 0
@@ -68,11 +81,58 @@ data class Release(
     fun favoriteLabel(): String = "$dateLabel · $network"
 
     /**
-     * `IN 3D` for a not-yet-aired episode. Scheduled rows show this instead of [episodeCode] — once
-     * an episode is in the future, "how long until it airs" is more useful at a glance than its
-     * season/episode number, which stays visible for today's and already-aired rows.
+     * How long until this airs, in whichever unit is actually meaningful right now: `IN 3D`, then
+     * `IN 8H`, then `IN 12M`, then `NOW`.
+     *
+     * A countdown that only ever counts days is precise and useless on the day itself — "IN 0D" and
+     * "IN 1D" are the same sentence to someone deciding whether to wait up. Changing unit as the
+     * moment approaches is what makes the number worth reading at every distance from it.
      */
-    val countdownLabel: String get() = if (dayOffset > 0) "IN ${dayOffset}D" else ""
+    fun countdownLabel(now: Long = System.currentTimeMillis()): String {
+        val at = airEpochMillis
+            ?: return if (dayOffset > 0) "IN ${dayOffset}D" else ""
+        val remaining = at - now
+        val minutes = remaining / 60_000L
+        return when {
+            remaining <= 0L -> "NOW"
+            minutes < 60L -> "IN ${minutes}M"
+            minutes < 48L * 60L -> "IN ${minutes / 60L}H"
+            else -> "IN ${minutes / (60L * 24L)}D"
+        }
+    }
+
+    /**
+     * The day, said the way a person would: `TONIGHT`, `TOMORROW`, `FRIDAY`, and only a bare date
+     * once it is far enough away that the weekday stops being orienting.
+     *
+     * `WED 26` is a database field. Naming the near days is both warmer and faster to read, which is
+     * the entire job of a label someone glances at from across a room.
+     */
+    val humanDay: String
+        get() = when {
+            dayOffset < 0 -> dayLabel
+            dayOffset == 0 -> "TONIGHT"
+            dayOffset == 1 -> "TOMORROW"
+            dayOffset < 7 -> WEEKDAY_NAMES[dayLabel.take(3).uppercase()] ?: dayLabel
+            else -> dayLabel
+        }
+
+    /** 0f..1f through the season, or null when the season's length isn't known. */
+    val seasonProgress: Float?
+        get() = if (seasonEpisodeCount > 0 && episodeNumber > 0) {
+            (episodeNumber.toFloat() / seasonEpisodeCount).coerceIn(0f, 1f)
+        } else {
+            null
+        }
+
+    /** `E4 / 10`, or null when the season's length isn't known. */
+    val seasonProgressLabel: String?
+        get() = if (seasonEpisodeCount > 0 && episodeNumber > 0) {
+            "E$episodeNumber / $seasonEpisodeCount"
+        } else {
+            null
+        }
+
 }
 
 /**

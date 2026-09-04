@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An unselected tab pill: a quiet raised surface, fully rounded, no border. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#221E1A"
+        android:endColor="#191614"
+        android:type="linear" />
+    <corners android:radius="999dp" />
+</shape>

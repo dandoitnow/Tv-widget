@@ -122,6 +122,8 @@ class AnticipatedSyncWorker(
                     },
                     imdbId = imdbId,
                     airEpochMillis = airInstantOf(episode),
+                    episodeNumber = episode.number,
+                    seasonEpisodeCount = schedule.seasonLengths[episode.season] ?: 0,
                 )
             }
         }.sortedWith(compareBy({ it.dayOffset }, { it.airTime }))

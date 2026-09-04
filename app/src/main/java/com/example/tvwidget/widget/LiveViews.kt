@@ -28,6 +28,22 @@ object LiveViews {
     /** How many releases the COMING UP ticker will cycle through before repeating. */
     private const val MAX_TICKER_ITEMS = 6
 
+    /**
+     * Whether the user has asked the system to stop animating.
+     *
+     * Someone who has set the animation scale to zero — for motion sensitivity, for battery, or just
+     * by preference — has said something unambiguous, and a widget that keeps cross-fading regardless
+     * is overriding a system-wide accessibility setting because it thinks its own animation is
+     * special. It isn't.
+     */
+    private fun motionReduced(context: Context): Boolean = runCatching {
+        android.provider.Settings.Global.getFloat(
+            context.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
+        ) == 0f
+    }.getOrDefault(false)
+
     /** One frame of the COMING UP ticker. */
     data class Upcoming(val title: String, val meta: String, val poster: Bitmap?)
 
@@ -46,9 +62,15 @@ object LiveViews {
         secondarySizeSp: Float,
     ): RemoteViews {
         val live = release.isLive()
+        val still = motionReduced(context)
         val views = RemoteViews(
             context.packageName,
-            if (live) R.layout.widget_hero_live else R.layout.widget_hero_static,
+            when {
+                live && still -> R.layout.widget_hero_live_still
+                live -> R.layout.widget_hero_live
+                still -> R.layout.widget_hero_static_still
+                else -> R.layout.widget_hero_static
+            },
         )
 
         if (live) {
@@ -58,7 +80,7 @@ object LiveViews {
         } else {
             views.setTextViewText(
                 R.id.hero_primary,
-                if (release.dayOffset > 0) release.countdownLabel else release.episodeCode,
+                if (release.dayOffset > 0) release.countdownLabel() else release.episodeCode,
             )
         }
         views.setTextViewTextSize(R.id.hero_primary, TypedValue.COMPLEX_UNIT_SP, primarySizeSp)
@@ -83,7 +105,10 @@ object LiveViews {
      */
     fun comingUp(context: Context, items: List<Upcoming>): RemoteViews? {
         if (items.isEmpty()) return null
-        val root = RemoteViews(context.packageName, R.layout.widget_comingup)
+        val root = RemoteViews(
+            context.packageName,
+            if (motionReduced(context)) R.layout.widget_comingup_still else R.layout.widget_comingup,
+        )
         root.removeAllViews(R.id.comingup_flipper)
         items.take(MAX_TICKER_ITEMS).forEach { item ->
             val child = RemoteViews(context.packageName, R.layout.widget_comingup_item)
