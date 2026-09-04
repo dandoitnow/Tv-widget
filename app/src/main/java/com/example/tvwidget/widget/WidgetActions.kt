@@ -14,6 +14,7 @@ import androidx.glance.appwidget.state.updateAppWidgetState
 import com.example.tvwidget.data.FavoriteEpisode
 import com.example.tvwidget.data.Tab
 import com.example.tvwidget.data.WidgetState
+import com.example.tvwidget.ui.Dimens
 
 /** Parameter keys shared by the widget's action callbacks. */
 object ActionKeys {
@@ -88,6 +89,28 @@ class SwitchTabAction : ActionCallback {
         val tab = parameters[ActionKeys.tab] ?: Tab.TODAY.name
         mutate(context, glanceId) {
             this[WidgetState.TAB] = tab
+            // A tab arrives collapsed. Carrying an expansion across tabs would make every later
+            // switch pay for rows the new tab was never asked to show, which is the cost this
+            // paging exists to avoid in the first place.
+            this[WidgetState.VISIBLE_ROWS] = Dimens.RowPage
+        }
+    }
+}
+
+/**
+ * Reveals another page of rows on the current tab.
+ *
+ * RemoteViews gives no scroll position and no scroll callback, so a list cannot notice that it has
+ * been scrolled to the end and quietly extend itself. The control at the end of the list *is* the
+ * scroll trigger: reaching it requires having scrolled that far, and tapping it is the only signal
+ * the platform will actually deliver.
+ */
+class ExpandRowsAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        mutate(context, glanceId) {
+            val current = WidgetState.visibleRows(this)
+            this[WidgetState.VISIBLE_ROWS] =
+                (current + Dimens.RowPage).coerceAtMost(Dimens.MaxWidgetRows)
         }
     }
 }

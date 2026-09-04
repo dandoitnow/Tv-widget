@@ -1,11 +1,13 @@
 package com.example.tvwidget.data
 
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
+import com.example.tvwidget.ui.Dimens
 import kotlinx.serialization.json.Json
 
 /**
@@ -28,6 +30,13 @@ object WidgetState {
     val REWATCH_LOG = stringPreferencesKey("rewatch_log")
     val ANTICIPATED = stringPreferencesKey("anticipated")
     val LAST_SYNC = longPreferencesKey("last_sync")
+
+    /**
+     * How many rows the current tab is showing. Starts at [Dimens.RowPage] and grows by that much
+     * each time SHOW MORE is tapped, so the common case stays small and fast and a long list is only
+     * paid for by someone who actually scrolled to the end and asked for it.
+     */
+    val VISIBLE_ROWS = intPreferencesKey("visible_rows")
 
     /** TODAY rows built from the user's tracked shows (see [TrackedShowsRepository]); null until synced. */
     val TRACKED_RELEASES = stringPreferencesKey("tracked_releases")
@@ -58,6 +67,10 @@ object WidgetState {
             ?: SampleData.releases()
 
     fun lastSync(prefs: Preferences): Long = prefs[LAST_SYNC] ?: 0L
+
+    /** Rows currently revealed on the active tab. Reset to one page whenever the tab changes. */
+    fun visibleRows(prefs: Preferences): Int =
+        (prefs[VISIBLE_ROWS] ?: Dimens.RowPage).coerceIn(Dimens.RowPage, Dimens.MaxWidgetRows)
 
     fun encodeFavorites(value: List<FavoriteEpisode>): String = json.encodeToString(favoritesSerializer, value)
 

@@ -9,6 +9,7 @@ import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.action.Action
 import androidx.glance.action.clickable
+import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
@@ -18,6 +19,8 @@ import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
+import androidx.glance.text.Text
+import androidx.glance.text.TextAlign
 import com.example.tvwidget.R
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.ui.Dimens
@@ -96,6 +99,39 @@ fun Poster(
         )
     } else {
         Box(modifier = shape.background(ImageProvider(R.drawable.poster_placeholder))) {}
+    }
+}
+
+/**
+ * The control that ends a truncated list: reveals another page of rows.
+ *
+ * It sits as the final item *inside* the scrolling list rather than pinned beneath it, because
+ * reaching it is the whole point. RemoteViews reports no scroll position and offers no scroll
+ * callback, so a list has no way to notice it has been scrolled to the end and extend itself; a row
+ * you can only reach by scrolling that far is the closest the platform allows, and it has the
+ * advantage of being explicit about what it costs.
+ *
+ * Styled as a quiet row rather than a button. It is a continuation of the list, not a call to
+ * action, and a loud control at the bottom of a list of shows would pull attention away from them.
+ */
+@Composable
+fun ShowMoreRow(remaining: Int) {
+    Box(modifier = GlanceModifier.fillMaxWidth().padding(bottom = Dimens.rowGap())) {
+        Box(
+            modifier = GlanceModifier
+                .fillMaxWidth()
+                .height(Tokens.TouchTarget)
+                .cornerRadiusCompat(Tokens.RadiusRow)
+                .background(ImageProvider(Surfaces.row(today = false, depth = 3)))
+                .clickable(actionRunCallback<ExpandRowsAction>()),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "SHOW $remaining MORE",
+                style = Tokens.label(Dimens.statusSize() + 1.5f, Tokens.Accent, TextAlign.Center),
+                maxLines = 1,
+            )
+        }
     }
 }
 
