@@ -1,13 +1,12 @@
 package com.example.tvwidget.work
 
 import android.content.Context
-import androidx.glance.appwidget.updateAll
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.example.tvwidget.widget.TvWidget
+import com.example.tvwidget.widget.WidgetRedraw
 import java.util.concurrent.TimeUnit
 
 /**
@@ -29,7 +28,7 @@ class WidgetRefreshWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        TvWidget().updateAll(applicationContext)
+        WidgetRedraw.all(applicationContext)
         return Result.success()
     }
 
