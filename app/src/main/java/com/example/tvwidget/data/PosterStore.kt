@@ -49,7 +49,7 @@ object PosterStore {
      * downloads, so a change to the finishing has to invalidate everything already on disk;
      * otherwise old and new posters sit in the same list looking visibly different from each other.
      */
-    private const val CACHE_VERSION = 2
+    private const val CACHE_VERSION = 3
 
     /**
      * The corner radius the stroke follows, in bitmap pixels. [Tokens.RadiusPoster] is 8dp, and a
@@ -58,6 +58,13 @@ object PosterStore {
      * at all three.
      */
     private const val STROKE_RADIUS_PX = 15f
+
+    /**
+     * Width of the pre-rendered widget copy. Rows draw posters between 28dp and 78dp wide, so this
+     * is a touch soft only at the largest size tier — a fair trade for a redraw that keeps up with
+     * the tap that caused it. See [loadVariant].
+     */
+    private const val VARIANT_WIDTH = 72
 
     private data class CacheEntry(val fileModifiedAt: Long, val bitmap: Bitmap, val accent: Int)
 
@@ -97,6 +104,7 @@ object PosterStore {
         if (marker.exists()) return
         dir.listFiles()?.forEach { it.delete() }
         synchronized(memoryCache) { memoryCache.clear() }
+        synchronized(scaledCache) { scaledCache.clear() }
         runCatching { marker.createNewFile() }
     }
 
@@ -104,6 +112,27 @@ object PosterStore {
     fun keyFor(title: String): String = title.lowercase().replace(Regex("[^a-z0-9]+"), "_")
 
     private fun file(context: Context, key: String): File = File(dir(context), "$key.png")
+
+    /**
+     * The widget-sized copy. A distinct extension rather than another `.png` so eviction can tell
+     * cache entries from their derivatives — counting variants as entries would both halve the
+     * effective cache size and make a variant eligible for deletion on its own.
+     */
+    private fun variantFile(context: Context, key: String): File = File(dir(context), "$key.wv")
+
+    /** Dominant colours, measured once at cache time. See [loadAccentsBlocking]. */
+    private fun accentPrefs(context: Context) =
+        context.applicationContext.getSharedPreferences("poster_accents", Context.MODE_PRIVATE)
+
+    private fun writeVariant(context: Context, key: String, source: Bitmap) {
+        runCatching {
+            val scaled = scaleToVariant(source)
+            FileOutputStream(variantFile(context, key)).use { out ->
+                scaled.compress(Bitmap.CompressFormat.PNG, 90, out)
+            }
+            if (scaled !== source) scaled.recycle()
+        }.onFailure { Log.w(TAG, "Variant write failed for $key: ${it.message}") }
+    }
 
     fun has(context: Context, key: String): Boolean = file(context, key).exists()
 
@@ -116,6 +145,15 @@ object PosterStore {
                 // Still relevant to a sync — bump its recency so an active poster never gets
                 // evicted just because it happens not to be on screen at the moment.
                 target.setLastModified(System.currentTimeMillis())
+                // Backfill anything derived that is missing. A sync is the right place to pay for
+                // this; the redraw path is not, and the redraw path is where it would otherwise
+                // happen — once per tap, forever, because nothing there writes the result down.
+                if (!variantFile(context, key).exists() || accentPrefs(context).getInt(key, 0) == 0) {
+                    runCatching { BitmapFactory.decodeFile(target.absolutePath) }.getOrNull()?.let { existing ->
+                        writeVariant(context, key, existing)
+                        accentPrefs(context).edit().putInt(key, dominantColor(existing)).apply()
+                    }
+                }
                 return@withContext true
             }
             var connection: HttpURLConnection? = null
@@ -132,6 +170,13 @@ object PosterStore {
                 // would be real work repeated for a result that never changes.
                 val finished = Surfaces.finishPoster(scaled, STROKE_RADIUS_PX)
                 FileOutputStream(target).use { out -> finished.compress(Bitmap.CompressFormat.PNG, 90, out) }
+
+                // Everything the widget needs at draw time is produced here instead, because the
+                // widget draws from a frozen-then-restarted process where nothing is cached and the
+                // work lands squarely between a tap and the screen changing.
+                writeVariant(context, key, finished)
+                accentPrefs(context).edit().putInt(key, dominantColor(finished)).apply()
+
                 if (finished !== scaled) scaled.recycle()
                 if (scaled !== bitmap) bitmap.recycle()
                 evictLeastRecentlyUsed(context)
@@ -169,49 +214,77 @@ object PosterStore {
         maxWidthPx: Int? = null,
     ): Map<String, Bitmap> =
         keys.distinct().mapNotNull { key ->
-            val bitmap = loadOne(context, key) ?: return@mapNotNull null
-            key to if (maxWidthPx == null) bitmap else scaledFor(key, bitmap, maxWidthPx)
+            val bitmap = if (maxWidthPx == null) loadOne(context, key) else loadVariant(context, key)
+            bitmap?.let { key to it }
         }.toMap()
 
     /**
-     * A smaller, denser copy of a poster, for callers whose bitmaps get parcelled.
+     * Loads the pre-rendered widget-sized copy of a poster.
      *
-     * The widget's rows are the reason this exists. Every bitmap drawn into a widget crosses a Binder
-     * transaction with a hard size limit, and a `LazyColumn` parcels *every* item rather than only
-     * the visible ones — so a long list multiplies the cost of each poster by the whole list length,
-     * not by what fits on screen. At the disk cache's 104x144 ARGB_8888 that is 58KB a row, which
-     * overran the limit and killed the launcher's widget host outright.
+     * This variant exists for two separate reasons, and both of them bite hard.
      *
-     * `RGB_565` halves it again and costs nothing visible: these are opaque photographs rendered at
-     * roughly a centimetre tall, not gradients where banding would show.
+     * *Size*: every bitmap drawn into a widget crosses a Binder transaction with a hard limit, and a
+     * `LazyColumn` parcels every item rather than only the visible ones — so cost scales with the
+     * length of the list, not with what fits on screen. Full-size posters overran that limit and
+     * killed the launcher's widget host.
      *
-     * The app's Catalogue deliberately does *not* pass a width. It draws the same posters far larger
-     * and has no parcelling constraint at all, so it keeps the full-resolution original.
+     * *Speed*: the widget redraws from a cold process almost every time, because the platform
+     * freezes the app between interactions, so nothing in memory survives. Producing this variant at
+     * draw time meant decoding a full-size PNG, scaling it, and re-encoding it to `RGB_565` — three
+     * allocations per row, twenty rows, on the path between a tap and the screen changing. Rendering
+     * it once at cache time reduces that to a single decode of a file a fifth the size.
+     *
+     * The fallback path still scales from the original, so a poster cached before this existed keeps
+     * working rather than vanishing until the next sync.
      */
-    private fun scaledFor(key: String, source: Bitmap, maxWidthPx: Int): Bitmap {
-        if (source.width <= maxWidthPx) return source
-        val cacheKey = "$key@$maxWidthPx"
+    private fun loadVariant(context: Context, key: String): Bitmap? {
+        val file = variantFile(context, key)
+        if (!file.exists()) return loadOne(context, key)?.let { scaledFor(key, it) }
+        val cacheKey = "$key@variant"
         synchronized(scaledCache) { scaledCache[cacheKey]?.let { return it } }
-        val height = (source.height * (maxWidthPx.toFloat() / source.width)).toInt().coerceAtLeast(1)
-        val scaled = runCatching {
-            Bitmap.createScaledBitmap(source, maxWidthPx, height, true)
-                .copy(Bitmap.Config.RGB_565, false)
-        }.getOrNull() ?: return source
+        val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }
+        val bitmap = runCatching { BitmapFactory.decodeFile(file.absolutePath, options) }.getOrNull()
+            ?: return null
+        synchronized(scaledCache) { scaledCache[cacheKey] = bitmap }
+        return bitmap
+    }
+
+    /** Scales a full-size poster down to the widget variant's dimensions. */
+    private fun scaledFor(key: String, source: Bitmap): Bitmap {
+        if (source.width <= VARIANT_WIDTH) return source
+        val cacheKey = "$key@variant"
+        synchronized(scaledCache) { scaledCache[cacheKey]?.let { return it } }
+        val scaled = runCatching { scaleToVariant(source) }.getOrNull() ?: return source
         synchronized(scaledCache) { scaledCache[cacheKey] = scaled }
         return scaled
     }
 
+    private fun scaleToVariant(source: Bitmap): Bitmap {
+        val height = (source.height * (VARIANT_WIDTH.toFloat() / source.width)).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(source, VARIANT_WIDTH, height, true)
+    }
+
     /**
-     * The dominant colour of each cached poster, for the per-row edge light (see
-     * [Surfaces.edgeLight]). Keys with no cached art are simply absent.
+     * The dominant colour of each cached poster, for the per-row edge light (see [Surfaces.row]).
      *
-     * Extraction is memoized with the decoded bitmap, so this is free for any poster the widget is
-     * already drawing — which is every poster it asks about.
+     * Read from a small preferences map written when the poster was cached, rather than measured
+     * from pixels here. Measuring meant decoding every poster at full size on the redraw path — on
+     * top of the variant decode the widget already needed — purely to sample it. That is the single
+     * most expensive thing a tap used to trigger, and it produced a value that never changes for a
+     * given image.
+     *
+     * Anything cached before this was persisted falls back to measuring, so no row loses its light.
      */
-    fun loadAccentsBlocking(context: Context, keys: Collection<String>): Map<String, Int> =
-        keys.distinct().mapNotNull { key ->
-            loadEntry(context, key)?.let { key to it.accent }
+    fun loadAccentsBlocking(context: Context, keys: Collection<String>): Map<String, Int> {
+        val stored = accentPrefs(context)
+        return keys.distinct().mapNotNull { key ->
+            val cached = stored.getInt(key, 0)
+            if (cached != 0) return@mapNotNull key to cached
+            val measured = loadEntry(context, key)?.accent ?: return@mapNotNull null
+            stored.edit().putInt(key, measured).apply()
+            key to measured
         }.toMap()
+    }
 
     private fun loadOne(context: Context, key: String): Bitmap? = loadEntry(context, key)?.bitmap
 
@@ -242,14 +315,22 @@ object PosterStore {
      * ground: an accurate but very dark navy would extract correctly and then be invisible.
      */
     private fun dominantColor(bitmap: Bitmap): Int {
+        val width = bitmap.width
+        val height = bitmap.height
+        // One bulk read rather than a getPixel per sample: getPixel crosses into native code every
+        // call, and at a thousand samples a poster that dominated the cost of this function.
+        val pixels = IntArray(width * height)
+        runCatching { bitmap.getPixels(pixels, 0, width, 0, 0, width, height) }
+            .getOrElse { return 0xFFD8B45F.toInt() }
+
         val step = 4
         val hsv = FloatArray(3)
         var weightSum = 0f
         var hueX = 0f
         var hueY = 0f
-        for (y in 0 until bitmap.height step step) {
-            for (x in 0 until bitmap.width step step) {
-                val pixel = bitmap.getPixel(x, y)
+        for (y in 0 until height step step) {
+            for (x in 0 until width step step) {
+                val pixel = pixels[y * width + x]
                 android.graphics.Color.colorToHSV(pixel, hsv)
                 val (h, s, v) = hsv
                 if (s < 0.18f || v < 0.15f || v > 0.95f) continue
@@ -281,8 +362,14 @@ object PosterStore {
         files.sortedBy { it.lastModified() }
             .take(overflow)
             .forEach { evicted ->
+                val key = evicted.nameWithoutExtension
                 evicted.delete()
-                synchronized(memoryCache) { memoryCache.remove(evicted.nameWithoutExtension) }
+                // The derived variant and the stored accent belong to this entry, not to the cache
+                // at large; leaving either behind would outlive the art it describes.
+                variantFile(context, key).delete()
+                accentPrefs(context).edit().remove(key).apply()
+                synchronized(memoryCache) { memoryCache.remove(key) }
+                synchronized(scaledCache) { scaledCache.remove("$key@variant") }
             }
     }
 }
