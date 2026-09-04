@@ -59,6 +59,16 @@ object TrackedShowsRepository {
         save(context, current.map { if (it.tvMazeId == tvMazeId) it.copy(imdbId = imdbId) else it })
     }
 
+    /**
+     * Backfills genres for a show tracked before they were stored, so [Recommender] only ever pays
+     * the lookup cost once per show rather than on every visit to the RECOMMENDED tab.
+     */
+    fun updateGenres(context: Context, tvMazeId: Int, genres: List<String>) {
+        val current = list(context)
+        if (current.none { it.tvMazeId == tvMazeId && it.genres != genres }) return
+        save(context, current.map { if (it.tvMazeId == tvMazeId) it.copy(genres = genres) else it })
+    }
+
     private fun save(context: Context, shows: List<TrackedShow>) {
         prefs(context).edit()
             .putString(KEY_TRACKED, json.encodeToString(serializer, shows))

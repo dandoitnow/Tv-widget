@@ -16,7 +16,7 @@ private val WEEKDAY_NAMES = mapOf(
  * Which tab the widget is showing. Persisted by [name].
  *
  * CATALOG isn't one of these — there's no widget-side content for it, just a header button that
- * opens the app straight into its Catalog screen (Favorites + Recommended + search, all native
+ * opens the app straight into its Catalog screen (Tracked + Trending + For You + search, all native
  * Android views — see [com.example.tvwidget.MainActivity]).
  */
 enum class Tab { TODAY, ANTICIPATED }
@@ -36,7 +36,7 @@ enum class ReleaseStatus(val label: String) {
  *
  * @param dayOffset days from today: negative aired, 0 today, positive scheduled.
  * @param dayLabel short feed label, e.g. `WED 26`.
- * @param dateLabel long label used when the episode is favourited, e.g. `WED 26 AUG`.
+ * @param dateLabel long label for a specific date, e.g. `WED 26 AUG`.
  * @param airTime local air time as `HH:mm`.
  */
 @Serializable
@@ -76,9 +76,6 @@ data class Release(
         val remaining = at - now
         return remaining > 0 && remaining < 24 * 60 * 60 * 1000L
     }
-
-    /** Label stored alongside a favourite, e.g. `FRI 28 AUG · APPLE TV+`. */
-    fun favoriteLabel(): String = "$dateLabel · $network"
 
     /**
      * How long until this airs, in whichever unit is actually meaningful right now: `IN 3D`, then
@@ -155,28 +152,17 @@ data class AnticipatedShow(
      * at this list's length was most of the sync's traffic.
      */
     val posterUrl: String? = null,
+    /**
+     * TVMaze's id, so a POPULAR row can be tracked straight from the widget. Zero for the bundled
+     * fallback rows, which are not real shows and so cannot be tracked.
+     */
+    val tvMazeId: Int = 0,
 ) {
+    /** True when this row came from the live feed and can actually be tracked. */
+    val trackable: Boolean get() = tvMazeId > 0
+
     /** `TODAY` on the day itself, otherwise `IN 7D`. */
     val awayLabel: String get() = if (daysAway <= 0) "TODAY" else "IN ${daysAway}D"
-}
-
-/** A favourited episode. The identity of a favourite is show title + episode code. */
-@Serializable
-data class FavoriteEpisode(
-    val showTitle: String,
-    val episodeCode: String,
-    val label: String,
-)
-
-/** A favourite show plus the episodes saved under it, as rendered by the app's Favorites view. */
-data class FavoriteShow(
-    val title: String,
-    val episodes: List<FavoriteEpisode>,
-    val rewatchDates: List<String>,
-) {
-    /** The rewatch count is always derived from the log, never stored separately. */
-    val rewatchCount: Int get() = rewatchDates.size
-    val episodeCountLabel: String get() = "%02d EP".format(episodes.size)
 }
 
 /**
@@ -193,6 +179,15 @@ data class CatalogShow(
     val posterUrl: String?,
     val tracked: Boolean,
     val imdbId: String? = null,
+    /** TVMaze's own genre tags. The whole basis of the FOR YOU tab — see [Recommender]. */
+    val genres: List<String> = emptyList(),
+    /**
+     * The most recent episode code, e.g. `S03E10` — how far along the show is.
+     *
+     * Null when the source didn't carry one; the Catalog row fills it in lazily rather than making
+     * every list wait on a per-show request before it can render at all.
+     */
+    val latestEpisode: String? = null,
 )
 
 /**
@@ -207,4 +202,9 @@ data class TrackedShow(
     val network: String,
     val posterUrl: String?,
     val imdbId: String? = null,
+    /**
+     * Genres, stored at track time so recommendations cost nothing to compute. Empty for shows
+     * tracked before this existed; [Recommender] backfills those on demand.
+     */
+    val genres: List<String> = emptyList(),
 )

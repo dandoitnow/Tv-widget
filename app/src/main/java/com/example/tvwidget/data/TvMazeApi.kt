@@ -69,6 +69,8 @@ object TvMazeApi {
         val imdbId: String? = null,
         /** Episodes per season number, for the season-progress bar. */
         val seasonLengths: Map<Int, Int> = emptyMap(),
+        /** The show's genres, which [Recommender] builds its taste profile from. */
+        val genres: List<String> = emptyList(),
     )
 
     private val scheduleCache = ConcurrentHashMap<Int, Pair<Long, ShowSchedule>>()
@@ -131,7 +133,10 @@ object TvMazeApi {
         val bodies = coroutineScope { urls.map { async { get(it) } }.awaitAll() }.filterNotNull()
         if (bodies.isEmpty()) throw java.io.IOException("All TVMaze schedule requests failed")
 
-        val shows = LinkedHashMap<Int, JSONObject>()
+        // The schedule entry is kept alongside the show, not discarded: it is the only place the
+        // episode code is available without a per-show request, and every list built from this pool
+        // wants to say how far along a show is.
+        val shows = LinkedHashMap<Int, Pair<JSONObject, JSONObject>>()
         bodies.forEach { body ->
             val entries = JSONArray(body)
             for (i in 0 until entries.length()) {
@@ -140,12 +145,12 @@ object TvMazeApi {
                 val showJson = entry.optJSONObject("show")
                     ?: entry.optJSONObject("_embedded")?.optJSONObject("show")
                     ?: continue
-                shows.putIfAbsent(showJson.optInt("id"), showJson)
+                shows.putIfAbsent(showJson.optInt("id"), showJson to entry)
             }
         }
         shows.values
-            .sortedByDescending { it.optInt("weight", 0) }
-            .map(::toCatalogShow)
+            .sortedByDescending { it.first.optInt("weight", 0) }
+            .map { (show, episode) -> toCatalogShow(show, episode) }
             .also { browseCache = System.currentTimeMillis() to it }
             .take(limit)
     }
@@ -243,6 +248,7 @@ object TvMazeApi {
             ?: show.optJSONObject("webChannel")?.optString("name")
             ?: "UNKNOWN"
         return AnticipatedShow(
+            tvMazeId = show.optInt("id"),
             title = show.optString("name"),
             // A first episode is the interesting case, and season 1 of it doubly so — those are the
             // rows worth putting a list like this in front of someone for.
@@ -317,6 +323,7 @@ object TvMazeApi {
             next = embedded?.optJSONObject("nextepisode")?.let(::toEpisodeInfo),
             imdbId = imdbIdFrom(json),
             seasonLengths = seasonLengthsFrom(embedded),
+            genres = genresFrom(json),
         ).also { scheduleCache[tvMazeId] = System.currentTimeMillis() to it }
     }
 
@@ -332,10 +339,23 @@ object TvMazeApi {
         return out
     }
 
+    /** `S03E10` from a schedule entry, or null when it isn't a numbered episode. */
+    private fun episodeCodeOf(episode: JSONObject): String? {
+        val season = episode.optInt("season", 0)
+        val number = episode.optInt("number", 0)
+        return if (season > 0 && number > 0) "S%02dE%02d".format(season, number) else null
+    }
+
+    /** TVMaze's genre tags for a show, as a plain list. */
+    private fun genresFrom(json: JSONObject): List<String> {
+        val array = json.optJSONArray("genres") ?: return emptyList()
+        return (0 until array.length()).mapNotNull { array.optString(it).takeIf { g -> g.isNotBlank() } }
+    }
+
     private fun imdbIdFrom(json: JSONObject): String? =
         json.optJSONObject("externals")?.optString("imdb")?.takeIf { it.isNotBlank() && it != "null" }
 
-    private fun toCatalogShow(json: JSONObject): CatalogShow {
+    private fun toCatalogShow(json: JSONObject, episode: JSONObject? = null): CatalogShow {
         val network = json.optJSONObject("network")?.optString("name")
             ?: json.optJSONObject("webChannel")?.optString("name")
             ?: "UNKNOWN"
@@ -346,7 +366,9 @@ object TvMazeApi {
             status = json.optString("status", "UNKNOWN").uppercase(java.util.Locale.US),
             posterUrl = json.optJSONObject("image")?.optString("medium")?.takeIf { it.isNotBlank() },
             tracked = false,
+            genres = genresFrom(json),
             imdbId = imdbIdFrom(json),
+            latestEpisode = episode?.let(::episodeCodeOf),
         )
     }
 

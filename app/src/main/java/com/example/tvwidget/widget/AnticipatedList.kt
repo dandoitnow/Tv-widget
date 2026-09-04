@@ -3,14 +3,20 @@ package com.example.tvwidget.widget
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
+import androidx.glance.ColorFilter
 import androidx.glance.GlanceModifier
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.background
+import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
+import androidx.glance.layout.size
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
@@ -21,6 +27,7 @@ import androidx.glance.layout.width
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import com.example.tvwidget.MainActivity
+import com.example.tvwidget.R
 import com.example.tvwidget.data.AnticipatedShow
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.ui.Dimens
@@ -35,6 +42,7 @@ fun AnticipatedList(
     shows: List<AnticipatedShow>,
     posters: Map<String, Bitmap>,
     accents: Map<String, Int>,
+    trackedIds: Set<Int>,
     hidden: Int = 0,
 ) {
     LazyColumn(modifier = GlanceModifier.fillMaxWidth()) {
@@ -45,6 +53,7 @@ fun AnticipatedList(
                 show = shows[index],
                 posters = posters,
                 accents = accents,
+                tracked = shows[index].tvMazeId in trackedIds,
             )
         }
         // The reveal control is the last thing in the scroll, so reaching it means having scrolled
@@ -61,6 +70,7 @@ private fun AnticipatedRow(
     show: AnticipatedShow,
     posters: Map<String, Bitmap>,
     accents: Map<String, Int>,
+    tracked: Boolean,
 ) {
     RowSurface(depth = depth, edgeAccent = accents[PosterStore.keyFor(show.title)]) {
         Row(
@@ -121,7 +131,48 @@ private fun AnticipatedRow(
                     )
                 }
             }
+            if (show.trackable) {
+                Spacer(GlanceModifier.width(4.dp))
+                QuickAdd(show = show, tracked = tracked)
+            }
         }
+    }
+}
+
+/**
+ * Track this show, from here.
+ *
+ * A recommendation you cannot act on where you read it is only half a feature: following something
+ * POPULAR just showed you otherwise meant opening the app and searching for the title already on
+ * screen. The control changes shape rather than only colour when tracked — a plus and a tick are
+ * legible at a glance and to anyone who does not separate the two colours.
+ */
+@Composable
+private fun QuickAdd(show: AnticipatedShow, tracked: Boolean) {
+    Box(
+        modifier = GlanceModifier
+            .width(Tokens.TouchTarget)
+            .height(Tokens.TouchTarget)
+            .clickable(
+                actionRunCallback<TrackShowAction>(
+                    actionParametersOf(
+                        ActionKeys.tvMazeId to show.tvMazeId,
+                        ActionKeys.showTitle to show.title,
+                        ActionKeys.network to show.network,
+                        ActionKeys.posterUrl to (show.posterUrl ?: ""),
+                    )
+                )
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            provider = ImageProvider(if (tracked) R.drawable.ic_check else R.drawable.ic_plus),
+            contentDescription = if (tracked) "Stop tracking ${show.title}" else "Track ${show.title}",
+            colorFilter = ColorFilter.tint(
+                Tokens.provider(if (tracked) Tokens.Accent else Tokens.white(0.42f))
+            ),
+            modifier = GlanceModifier.size(Dimens.starIconSize()),
+        )
     }
 }
 

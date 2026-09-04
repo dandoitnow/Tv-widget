@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">TV Release Tracker</string>
     <string name="widget_label">TV Releases</string>
-    <string name="widget_description">Today\'s episodes, popular premieres and your saved favorites.</string>
+    <string name="widget_description">Today\'s episodes, popular premieres and shows picked for you.</string>
 
     <!--
       Sample content for the widget picker preview (widget_preview_layout). Kept as strings rather
