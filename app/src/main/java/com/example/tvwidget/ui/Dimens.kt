@@ -17,23 +17,18 @@ import androidx.glance.LocalSize
  */
 object Dimens {
 
-    enum class Tier { COMPACT, ROOMY, XL }
+    enum class Tier { COMPACT, ROOMY }
 
     @Composable
     fun tier(): Tier {
         val height = LocalSize.current.height
-        return when {
-            height > 400.dp -> Tier.XL
-            height > 170.dp -> Tier.ROOMY
-            else -> Tier.COMPACT
-        }
+        return if (height > 170.dp) Tier.ROOMY else Tier.COMPACT
     }
 
     @Composable
     fun listRowHeight(): Dp = when (tier()) {
         Tier.COMPACT -> 44.dp
         Tier.ROOMY -> 84.dp
-        Tier.XL -> 108.dp
     }
 
     /** Air between row surfaces — what replaced the old hairline rules. */
@@ -41,28 +36,24 @@ object Dimens {
     fun rowGap(): Dp = when (tier()) {
         Tier.COMPACT -> 4.dp
         Tier.ROOMY -> 7.dp
-        Tier.XL -> 9.dp
     }
 
     @Composable
     fun posterWidth(): Dp = when (tier()) {
         Tier.COMPACT -> 28.dp
         Tier.ROOMY -> 54.dp
-        Tier.XL -> 68.dp
     }
 
     @Composable
     fun posterHeight(): Dp = when (tier()) {
         Tier.COMPACT -> 39.dp
         Tier.ROOMY -> 75.dp
-        Tier.XL -> 95.dp
     }
 
     @Composable
     fun tabPillHeight(): Dp = when (tier()) {
         Tier.COMPACT -> 26.dp
         Tier.ROOMY -> 44.dp
-        Tier.XL -> 56.dp
     }
 
     /** Tab labels. */
@@ -70,7 +61,6 @@ object Dimens {
     fun tabLabelSize(): Float = when (tier()) {
         Tier.COMPACT -> 11f
         Tier.ROOMY -> 15f
-        Tier.XL -> 19f
     }
 
     /**
@@ -85,7 +75,6 @@ object Dimens {
     fun metaSize(): Float = when (tier()) {
         Tier.COMPACT -> 9.5f
         Tier.ROOMY -> 13f
-        Tier.XL -> 16f
     }
 
     /** Episode codes and countdowns — the numeric column. */
@@ -93,7 +82,6 @@ object Dimens {
     fun accentLabelSize(): Float = when (tier()) {
         Tier.COMPACT -> 12f
         Tier.ROOMY -> 17f
-        Tier.XL -> 21f
     }
 
     /** Status text under the numeric column: AIRS TONIGHT, SCHEDULED. */
@@ -101,7 +89,6 @@ object Dimens {
     fun statusSize(): Float = when (tier()) {
         Tier.COMPACT -> 8f
         Tier.ROOMY -> 11f
-        Tier.XL -> 14f
     }
 
     /** The smallest text: premiere dates beside the hype bar. */
@@ -109,14 +96,12 @@ object Dimens {
     fun smallLabelSize(): Float = when (tier()) {
         Tier.COMPACT -> 7.5f
         Tier.ROOMY -> 10f
-        Tier.XL -> 12f
     }
 
     @Composable
     fun starIconSize(): Dp = when (tier()) {
         Tier.COMPACT -> 14.dp
         Tier.ROOMY -> 20.dp
-        Tier.XL -> 24.dp
     }
 
     /** The TODAY pill's live dot. */
@@ -124,7 +109,6 @@ object Dimens {
     fun tabGlyphSize(): Dp = when (tier()) {
         Tier.COMPACT -> 5.dp
         Tier.ROOMY -> 8.dp
-        Tier.XL -> 10.dp
     }
 
     // -- The hero row --------------------------------------------------------------------------
@@ -136,21 +120,18 @@ object Dimens {
     fun heroRowHeight(): Dp = when (tier()) {
         Tier.COMPACT -> 62.dp
         Tier.ROOMY -> 100.dp
-        Tier.XL -> 124.dp
     }
 
     @Composable
     fun heroPosterWidth(): Dp = when (tier()) {
         Tier.COMPACT -> 38.dp
         Tier.ROOMY -> 62.dp
-        Tier.XL -> 78.dp
     }
 
     @Composable
     fun heroPosterHeight(): Dp = when (tier()) {
         Tier.COMPACT -> 53.dp
         Tier.ROOMY -> 86.dp
-        Tier.XL -> 108.dp
     }
 
     /** The live countdown itself — the largest thing in the row after the title. */
@@ -158,7 +139,6 @@ object Dimens {
     fun heroCountdownSize(): Float = when (tier()) {
         Tier.COMPACT -> 15f
         Tier.ROOMY -> 20f
-        Tier.XL -> 25f
     }
 
     /** The line the countdown cross-fades with: air time and network. */
@@ -166,7 +146,6 @@ object Dimens {
     fun heroSecondarySize(): Float = when (tier()) {
         Tier.COMPACT -> 10f
         Tier.ROOMY -> 13f
-        Tier.XL -> 16f
     }
 
     /**
@@ -180,7 +159,6 @@ object Dimens {
     fun heroCountdownWidth(): Dp = when (tier()) {
         Tier.COMPACT -> 76.dp
         Tier.ROOMY -> 100.dp
-        Tier.XL -> 124.dp
     }
 
     /**
@@ -208,12 +186,12 @@ object Dimens {
     // -- The COMING UP ticker ------------------------------------------------------------------
 
     /**
-     * Only the largest tier gets the ticker. Below that, every dp belongs to the list — a strip that
-     * cost a whole visible row would be trading information for decoration, which is the wrong trade
-     * even when the decoration moves.
+     * Only the larger tier gets the ticker. On a compact widget every dp belongs to the list, and a
+     * strip that cost a whole visible row would be trading information for decoration — the wrong
+     * trade even when the decoration moves.
      */
     @Composable
-    fun showTicker(): Boolean = tier() == Tier.XL
+    fun showTicker(): Boolean = tier() == Tier.ROOMY
 
     /** How many rows the list shows before the rest are handed to the ticker. */
     const val TickerStartsAfter = 4
@@ -221,7 +199,18 @@ object Dimens {
     // -- The RemoteViews budget ------------------------------------------------------------------
 
     /**
-     * The most rows the widget will render, whatever the data holds.
+     * How many rows a tab starts with, and how many each SHOW MORE reveals.
+     *
+     * Every row costs twice: once at compose time and again in the parcel, and both land between a
+     * tap and the screen changing, on a process the platform has usually just unfrozen. Rendering
+     * twenty rows up front made that delay noticeable for everyone, in exchange for rows almost
+     * nobody scrolls to. A page of ten keeps the common interaction quick and lets the people who
+     * do scroll pay for the rest, when they ask for it.
+     */
+    const val RowPage = 10
+
+    /**
+     * The ceiling SHOW MORE stops at, whatever the data holds.
      *
      * This is a hard platform constraint wearing the clothes of a design decision. A widget's
      * RemoteViews crosses a Binder transaction with a size limit, and Glance's `LazyColumn` parcels
@@ -230,12 +219,10 @@ object Dimens {
      * widget host outright (`TransactionTooLargeException: data parcel size 779984 bytes`), which
      * took the whole widget down rather than just truncating it.
      *
-     * With posters downscaled for the widget (see `PosterStore.loadBitmapsBlocking`), a row costs
-     * roughly 15KB and twenty of them leave comfortable headroom under the limit. The full list is
-     * still fetched and still lives in the Catalogue screen, which is an ordinary Activity and has
-     * no such ceiling.
+     * The full list is still fetched and still lives in the Catalogue screen, which is an ordinary
+     * Activity and has no such ceiling.
      */
-    const val MaxWidgetRows = 20
+    const val MaxWidgetRows = 30
 
     /**
      * Target poster width in pixels for widget rows. Rows draw posters between 28dp and 78dp wide,

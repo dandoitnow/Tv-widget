@@ -48,6 +48,7 @@ fun TodayFeed(
     favorites: List<FavoriteEpisode>,
     posters: Map<String, Bitmap>,
     accents: Map<String, Int>,
+    hidden: Int = 0,
 ) {
     if (releases.isEmpty()) return
 
@@ -75,6 +76,9 @@ fun TodayFeed(
                 accents = accents,
             )
         }
+        // The reveal control is the last thing in the scroll, so reaching it means having scrolled
+        // to the end — the nearest thing RemoteViews allows to loading more on scroll.
+        if (hidden > 0) item { ShowMoreRow(remaining = hidden) }
         // Trailing air so the last card can settle clear of the widget's edge.
         item { Spacer(GlanceModifier.fillMaxWidth().height(Dimens.listRowHeight())) }
     }

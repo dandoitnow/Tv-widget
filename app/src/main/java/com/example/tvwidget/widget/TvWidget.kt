@@ -51,13 +51,15 @@ class TvWidget : GlanceAppWidget() {
 
     override val stateDefinition: GlanceStateDefinition<Preferences> = PreferencesGlanceStateDefinition
 
-    // Three breakpoints: the original compact 5x2 design, a roomy one, and an XL one for however far
-    // past that the user drags the widget. Glance picks whichever of these fits the actual bounds
-    // it's given; `Dimens` reads `LocalSize` to tell them apart inside composition and scales rows,
-    // posters, tabs, *and every text size* accordingly — a taller widget needs bigger content, not
-    // just a bigger empty container around the same small text.
+    // Glance picks whichever of these fits the actual bounds it's given; `Dimens` reads `LocalSize`
+    // to tell them apart inside composition and scales rows, posters, tabs, *and every text size*
+    // accordingly — a taller widget needs bigger content, not just a bigger empty container around
+    // the same small text.
+    // Two breakpoints, not three. Responsive composes the widget once per breakpoint and packs all
+    // of them into a single RemoteViews, so a third size was a flat 50% surcharge on every redraw —
+    // paid on the path between a tap and the screen changing, for a size most placements never use.
     override val sizeMode: SizeMode = SizeMode.Responsive(
-        setOf(DpSize(320.dp, 110.dp), DpSize(320.dp, 260.dp), DpSize(320.dp, 500.dp))
+        setOf(DpSize(320.dp, 110.dp), DpSize(320.dp, 300.dp))
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -77,10 +79,20 @@ private fun WidgetContent() {
     // *starts* at today's first release — Glance's LazyColumn has no scroll-to-index API to jump
     // there on a tap, so the only way to guarantee landing on today is for there to be nothing
     // rendered above it to land past.
-    // Capped at Dimens.MaxWidgetRows: a LazyColumn parcels every item it is given, and the whole
-    // RemoteViews has to fit through a Binder transaction. See Dimens.MaxWidgetRows.
-    val todayReleases = releases.filterNot { it.hasAired }.take(Dimens.MaxWidgetRows)
-    val anticipated = WidgetState.anticipated(prefs).take(Dimens.MaxWidgetRows)
+    val allToday = releases.filterNot { it.hasAired }
+    val allAnticipated = WidgetState.anticipated(prefs)
+
+    // Only a page of rows is rendered at a time. A LazyColumn parcels every item it is given and the
+    // whole RemoteViews has to cross a Binder transaction, so each row costs at compose time *and*
+    // in the parcel — both of which land between a tap and the screen changing. The rest are one tap
+    // away at the end of the list; see Dimens.RowPage and ShowMoreRow.
+    val visibleRows = WidgetState.visibleRows(prefs)
+    val todayReleases = allToday.take(visibleRows)
+    val anticipated = allAnticipated.take(visibleRows)
+    val hidden = when (tab) {
+        Tab.TODAY -> allToday.size - todayReleases.size
+        Tab.ANTICIPATED -> allAnticipated.size - anticipated.size
+    }.coerceAtMost(Dimens.MaxWidgetRows - visibleRows)
 
     // Read directly here — reactively, off `tab`/`releases`/`anticipated` above — rather than as a
     // value computed once in `provideGlance` and passed down. `provideGlance`'s suspend body isn't
@@ -139,12 +151,14 @@ private fun WidgetContent() {
                             favorites = favorites,
                             posters = posters,
                             accents = accents,
+                            hidden = hidden,
                         )
 
                         Tab.ANTICIPATED -> AnticipatedList(
                             shows = anticipated,
                             posters = posters,
                             accents = accents,
+                            hidden = hidden,
                         )
                     }
                 }

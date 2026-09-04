@@ -35,6 +35,7 @@ fun AnticipatedList(
     shows: List<AnticipatedShow>,
     posters: Map<String, Bitmap>,
     accents: Map<String, Int>,
+    hidden: Int = 0,
 ) {
     LazyColumn(modifier = GlanceModifier.fillMaxWidth()) {
         items(shows.size) { index ->
@@ -46,6 +47,9 @@ fun AnticipatedList(
                 accents = accents,
             )
         }
+        // The reveal control is the last thing in the scroll, so reaching it means having scrolled
+        // to the end — the nearest thing RemoteViews allows to loading more on scroll.
+        if (hidden > 0) item { ShowMoreRow(remaining = hidden) }
         item { Spacer(GlanceModifier.fillMaxWidth().height(Dimens.listRowHeight())) }
     }
 }
