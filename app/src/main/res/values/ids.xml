@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ids shared across the RemoteViews layouts the widget embeds via Glance's AndroidRemoteViews.
+  Declared here rather than with @+id in one layout and @id in the others, because the "live" and
+  "static" hero variants are interchangeable at the call site and neither one owns the ids.
+-->
+<resources>
+    <item name="hero_flipper" type="id" />
+    <item name="hero_primary" type="id" />
+    <item name="hero_secondary" type="id" />
+    <item name="comingup_flipper" type="id" />
+    <item name="comingup_poster" type="id" />
+    <item name="comingup_title" type="id" />
+    <item name="comingup_meta" type="id" />
+</resources>

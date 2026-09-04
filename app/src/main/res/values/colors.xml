@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#0B0B0B</color>
-    <color name="widget_background">#0B0B0B</color>
+    <!-- Warm near-black, matching Tokens.Background. Pure #0B0B0B read as unstyled. -->
+    <color name="ic_launcher_background">#0E0C0A</color>
+    <color name="widget_background">#0E0C0A</color>
 </resources>

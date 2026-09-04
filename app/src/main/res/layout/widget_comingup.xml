@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The COMING UP strip: an ambient ticker of releases further down the schedule than the list has room
+  to show, cross-fading one at a time along the bottom of a tall widget.
+
+  The flipper is left empty here and filled at build time with RemoteViews.addView, because the
+  number of upcoming releases varies. The obvious alternative - a fixed set of children with the
+  unused ones hidden - does not work: ViewAnimator still flips to a GONE child, so the strip would
+  blank out for six seconds at a time.
+-->
+<ViewFlipper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@id/comingup_flipper"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:autoStart="true"
+    android:flipInterval="5000"
+    android:measureAllChildren="true"
+    android:inAnimation="@android:anim/fade_in"
+    android:outAnimation="@android:anim/fade_out" />

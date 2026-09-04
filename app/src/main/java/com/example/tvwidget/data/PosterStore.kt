@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
+import com.example.tvwidget.ui.Surfaces
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -42,7 +43,23 @@ object PosterStore {
     /** Comfortably more than one tab's worth of rows; bounds the in-memory bitmap cache's RAM use. */
     private const val MAX_MEMORY_ENTRIES = 60
 
-    private data class CacheEntry(val fileModifiedAt: Long, val bitmap: Bitmap)
+    /**
+     * Bumped whenever what gets *baked into* a cached PNG changes — currently the inner stroke and
+     * vignette applied by [Surfaces.finishPoster]. Cached posters are finished art, not raw
+     * downloads, so a change to the finishing has to invalidate everything already on disk;
+     * otherwise old and new posters sit in the same list looking visibly different from each other.
+     */
+    private const val CACHE_VERSION = 2
+
+    /**
+     * The corner radius the stroke follows, in bitmap pixels. [Tokens.RadiusPoster] is 8dp, and a
+     * poster renders around 54dp wide at the middle size tier against a 104px-wide bitmap — so a
+     * little over 15px. The other tiers land close enough that a single baked radius reads correctly
+     * at all three.
+     */
+    private const val STROKE_RADIUS_PX = 15f
+
+    private data class CacheEntry(val fileModifiedAt: Long, val bitmap: Bitmap, val accent: Int)
 
     // LinkedHashMap in access-order mode is a textbook bounded LRU: removeEldestEntry runs on every
     // insert/access and evicts the least-recently-touched entry once the cap is exceeded.
@@ -52,7 +69,30 @@ object PosterStore {
     }
 
     private fun dir(context: Context): File =
-        File(context.applicationContext.filesDir, "posters").apply { mkdirs() }
+        File(context.applicationContext.filesDir, "posters").apply {
+            mkdirs()
+            migrateIfStale(this)
+        }
+
+    @Volatile
+    private var migrated = false
+
+    /**
+     * Wipes the cache when [CACHE_VERSION] moves on. Cheap and safe: the next sync re-downloads
+     * whatever is still relevant, and the alternative — re-finishing every PNG in place — would mean
+     * reading, decoding, and rewriting the whole cache to save a handful of downloads.
+     */
+    private fun migrateIfStale(dir: File) {
+        // dir() is on the path of every single poster lookup, so the version check is latched for
+        // the life of the process rather than paying a stat syscall per row per redraw.
+        if (migrated) return
+        migrated = true
+        val marker = File(dir, ".v$CACHE_VERSION")
+        if (marker.exists()) return
+        dir.listFiles()?.forEach { it.delete() }
+        synchronized(memoryCache) { memoryCache.clear() }
+        runCatching { marker.createNewFile() }
+    }
 
     /** Stable, filesystem-safe cache key for a show — titles for demo content, TVMaze ids otherwise. */
     fun keyFor(title: String): String = title.lowercase().replace(Regex("[^a-z0-9]+"), "_")
@@ -81,7 +121,12 @@ object PosterStore {
                 if (connection.responseCode !in 200..299) return@withContext false
                 val bitmap = connection.inputStream.use(BitmapFactory::decodeStream) ?: return@withContext false
                 val scaled = Bitmap.createScaledBitmap(bitmap, TARGET_WIDTH, TARGET_HEIGHT, true)
-                FileOutputStream(target).use { out -> scaled.compress(Bitmap.CompressFormat.PNG, 90, out) }
+                // Finishing is baked in here rather than applied at draw time: the widget redraws on
+                // every interaction and compositing a stroke and vignette per poster per redraw
+                // would be real work repeated for a result that never changes.
+                val finished = Surfaces.finishPoster(scaled, STROKE_RADIUS_PX)
+                FileOutputStream(target).use { out -> finished.compress(Bitmap.CompressFormat.PNG, 90, out) }
+                if (finished !== scaled) scaled.recycle()
                 if (scaled !== bitmap) bitmap.recycle()
                 evictLeastRecentlyUsed(context)
                 true
@@ -115,25 +160,81 @@ object PosterStore {
     fun loadBitmapsBlocking(context: Context, keys: Collection<String>): Map<String, Bitmap> =
         keys.distinct().mapNotNull { key -> loadOne(context, key)?.let { key to it } }.toMap()
 
-    private fun loadOne(context: Context, key: String): Bitmap? {
+    /**
+     * The dominant colour of each cached poster, for the per-row edge light (see
+     * [Surfaces.edgeLight]). Keys with no cached art are simply absent.
+     *
+     * Extraction is memoized with the decoded bitmap, so this is free for any poster the widget is
+     * already drawing — which is every poster it asks about.
+     */
+    fun loadAccentsBlocking(context: Context, keys: Collection<String>): Map<String, Int> =
+        keys.distinct().mapNotNull { key ->
+            loadEntry(context, key)?.let { key to it.accent }
+        }.toMap()
+
+    private fun loadOne(context: Context, key: String): Bitmap? = loadEntry(context, key)?.bitmap
+
+    private fun loadEntry(context: Context, key: String): CacheEntry? {
         val file = file(context, key)
         if (!file.exists()) return null
         val modifiedAt = file.lastModified()
 
         synchronized(memoryCache) {
             memoryCache[key]?.let { cached ->
-                if (cached.fileModifiedAt == modifiedAt) return cached.bitmap
+                if (cached.fileModifiedAt == modifiedAt) return cached
             }
         }
 
         val bitmap = runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull() ?: return null
-        synchronized(memoryCache) { memoryCache[key] = CacheEntry(modifiedAt, bitmap) }
-        return bitmap
+        val entry = CacheEntry(modifiedAt, bitmap, dominantColor(bitmap))
+        synchronized(memoryCache) { memoryCache[key] = entry }
+        return entry
+    }
+
+    /**
+     * The colour a poster "reads as" — not its average, which on almost any real poster is a muddy
+     * grey-brown, but the colour a person would name if asked.
+     *
+     * Pixels are weighted by saturation and filtered for mid-range brightness, so a poster's actual
+     * subject wins over its black background and its white title text. The result is then pushed to
+     * a fixed saturation and lightness, because the edge light has to be legible against a near-black
+     * ground: an accurate but very dark navy would extract correctly and then be invisible.
+     */
+    private fun dominantColor(bitmap: Bitmap): Int {
+        val step = 4
+        val hsv = FloatArray(3)
+        var weightSum = 0f
+        var hueX = 0f
+        var hueY = 0f
+        for (y in 0 until bitmap.height step step) {
+            for (x in 0 until bitmap.width step step) {
+                val pixel = bitmap.getPixel(x, y)
+                android.graphics.Color.colorToHSV(pixel, hsv)
+                val (h, s, v) = hsv
+                if (s < 0.18f || v < 0.15f || v > 0.95f) continue
+                val weight = s * v
+                // Hues are angles, so they are averaged on the unit circle: a plain arithmetic mean
+                // of a red poster's hues straddling 0/360 would come out cyan.
+                val radians = Math.toRadians(h.toDouble())
+                hueX += (kotlin.math.cos(radians) * weight).toFloat()
+                hueY += (kotlin.math.sin(radians) * weight).toFloat()
+                weightSum += weight
+            }
+        }
+        // A poster with no usable colour at all (true monochrome art) falls back to the house gold,
+        // which keeps the row lit and in-palette rather than leaving one row conspicuously flat.
+        if (weightSum < 0.5f) return 0xFFD8B45F.toInt()
+
+        val hue = ((Math.toDegrees(kotlin.math.atan2(hueY, hueX).toDouble()) + 360.0) % 360.0).toFloat()
+        return android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.62f, 0.78f))
     }
 
     /** Deletes the oldest-by-mtime files once the cache grows past [MAX_CACHED_POSTERS]. */
     private fun evictLeastRecentlyUsed(context: Context) {
-        val files = dir(context).listFiles() ?: return
+        // Posters only — the version marker is bookkeeping, not cache content, and letting it into
+        // this list would both inflate the count and make it eligible for eviction as the oldest
+        // file, silently re-triggering a full cache wipe.
+        val files = dir(context).listFiles { f: File -> f.name.endsWith(".png") } ?: return
         val overflow = files.size - MAX_CACHED_POSTERS
         if (overflow <= 0) return
         files.sortedBy { it.lastModified() }

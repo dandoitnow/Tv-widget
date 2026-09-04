@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The hero row's right-hand column when the release is more than a day out, so there is no live
+  countdown to run. Structurally identical to widget_hero_live so the two are interchangeable at the
+  call site; the only difference is that the primary line is a plain TextView holding "IN 7D"
+  instead of a self-ticking Chronometer.
+
+  It still flips. The cross-fade between the countdown and the air date is what makes the widget feel
+  alive when nothing is imminent, and it costs exactly as little as the live variant does.
+-->
+<ViewFlipper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@id/hero_flipper"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:autoStart="true"
+    android:flipInterval="6000"
+    android:measureAllChildren="true"
+    android:inAnimation="@android:anim/fade_in"
+    android:outAnimation="@android:anim/fade_out">
+
+    <TextView
+        android:id="@id/hero_primary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:gravity="end"
+        android:maxLines="1"
+        android:fontFamily="monospace"
+        android:includeFontPadding="false"
+        android:textColor="#F3EDE3"
+        android:textSize="17sp" />
+
+    <TextView
+        android:id="@id/hero_secondary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:gravity="end"
+        android:maxLines="1"
+        android:fontFamily="sans-serif-medium"
+        android:includeFontPadding="false"
+        android:textColor="#D8B45F"
+        android:textSize="13sp" />
+</ViewFlipper>

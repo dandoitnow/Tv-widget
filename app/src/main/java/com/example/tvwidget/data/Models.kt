@@ -41,9 +41,28 @@ data class Release(
     val status: ReleaseStatus,
     /** The show's IMDb id (`tt1234567`), when TVMaze has one on file. Null falls back to a search. */
     val imdbId: String? = null,
+    /**
+     * Absolute air time, for the widget's live countdown. Null for anything without a known clock
+     * time (bundled sample rows), which simply falls back to the static `IN 3D` label.
+     */
+    val airEpochMillis: Long? = null,
 ) {
     val isToday: Boolean get() = dayOffset == 0
     val hasAired: Boolean get() = dayOffset < 0
+
+    /**
+     * Whether this release is close enough for a live ticking countdown.
+     *
+     * Capped at 24 hours because the widget renders that countdown with a `Chronometer`, which
+     * formats as H:MM:SS with unbounded hours — a week out reads as `168:04:22`, which is precise,
+     * useless, and ugly. Past a day, `IN 7D` is both prettier and more informative, so the threshold
+     * is the design decision, not an implementation limit.
+     */
+    fun isLive(now: Long = System.currentTimeMillis()): Boolean {
+        val at = airEpochMillis ?: return false
+        val remaining = at - now
+        return remaining > 0 && remaining < 24 * 60 * 60 * 1000L
+    }
 
     /** Label stored alongside a favourite, e.g. `FRI 28 AUG · APPLE TV+`. */
     fun favoriteLabel(): String = "$dateLabel · $network"

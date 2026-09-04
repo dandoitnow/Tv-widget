@@ -13,6 +13,7 @@ import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.ContentScale
+import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
@@ -21,11 +22,25 @@ import androidx.glance.layout.width
 import com.example.tvwidget.R
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.ui.Dimens
+import com.example.tvwidget.ui.Surfaces
 import com.example.tvwidget.ui.Tokens
 
 /**
  * One list row's surface: a soft-cornered card with air around it, replacing the hairline-separated
- * rows the list used to be. [today] warms it from the leading edge (see `surface_row_today`).
+ * rows the list used to be. [today] warms it from the leading edge.
+ *
+ * Two things vary per row, which is why the fill is a generated bitmap rather than a drawable:
+ *
+ *  * [depth] fades the card as it descends the list, so the list falls away into the widget instead
+ *    of lying flat on it. That doubles as hierarchy — the top of the list ends up the most solid
+ *    thing on screen without any explicit marker saying so.
+ *  * [edgeAccent] washes the row's leading edge with the dominant colour of its own poster, so every
+ *    row is lit by its own artwork. A shelf of shows then reads as a shelf of *different* shows
+ *    rather than as repeated furniture.
+ *
+ * The edge light is added before [content] so content sits above it in the frame — which matters for
+ * more than paint order, since in a `FrameLayout` the topmost child is the one that gets the touch.
+ * A wash drawn over the row would quietly eat every tap in it.
  *
  * The gap is applied as bottom padding *outside* the surface rather than as a spacer item, so the
  * air belongs to the row and a list never ends on a stray gap.
@@ -33,6 +48,8 @@ import com.example.tvwidget.ui.Tokens
 @Composable
 fun RowSurface(
     today: Boolean = false,
+    depth: Int = 0,
+    edgeAccent: Int? = null,
     content: @Composable () -> Unit,
 ) {
     Box(modifier = GlanceModifier.fillMaxWidth().padding(bottom = Dimens.rowGap())) {
@@ -41,9 +58,20 @@ fun RowSurface(
                 .fillMaxWidth()
                 .cornerRadiusCompat(Tokens.RadiusRow)
                 .background(
-                    ImageProvider(if (today) R.drawable.surface_row_today else R.drawable.surface_row)
+                    ImageProvider(Surfaces.row(today = today, depth = depth)),
+                    contentScale = ContentScale.FillBounds,
                 ),
         ) {
+            if (edgeAccent != null) {
+                Box(
+                    modifier = GlanceModifier
+                        .fillMaxSize()
+                        .background(
+                            ImageProvider(Surfaces.edgeLight(edgeAccent)),
+                            contentScale = ContentScale.FillBounds,
+                        ),
+                ) {}
+            }
             content()
         }
     }
@@ -58,9 +86,13 @@ fun RowSurface(
  * there yet should recede, not announce itself.
  */
 @Composable
-fun Poster(title: String, posters: Map<String, Bitmap>, dimmed: Boolean = false) {
-    val width = Dimens.posterWidth()
-    val height = Dimens.posterHeight()
+fun Poster(
+    title: String,
+    posters: Map<String, Bitmap>,
+    dimmed: Boolean = false,
+    width: Dp = Dimens.posterWidth(),
+    height: Dp = Dimens.posterHeight(),
+) {
     val bitmap = posters[PosterStore.keyFor(title)]
     val shape = GlanceModifier.size(width, height).cornerRadiusCompat(Tokens.RadiusPoster)
 

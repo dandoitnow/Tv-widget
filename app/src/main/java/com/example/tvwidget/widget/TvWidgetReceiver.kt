@@ -2,6 +2,7 @@ package com.example.tvwidget.widget
 
 import android.appwidget.AppWidgetManager
 import android.content.Context
+import android.content.Intent
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import com.example.tvwidget.work.AnticipatedSyncWorker
@@ -30,5 +31,23 @@ class TvWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
         AnticipatedSyncWorker.cancel(context)
+    }
+
+    /**
+     * Resyncs after the app itself is updated.
+     *
+     * [onEnabled] only fires for the *first* widget ever placed, and the periodic refresh is daily,
+     * so without this an update could leave the widget showing pre-update data for the better part
+     * of a day. That is not hypothetical: an update is exactly when cached data changes shape —
+     * `PosterStore.CACHE_VERSION` deliberately wipes the poster cache when the art's finishing
+     * changes, and `Release` gained an air timestamp the live countdown needs and older persisted
+     * rows do not carry. Both heal on the next sync, so the next sync should be now.
+     */
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            AnticipatedSyncWorker.schedule(context)
+            AnticipatedSyncWorker.runOnce(context)
+        }
     }
 }
