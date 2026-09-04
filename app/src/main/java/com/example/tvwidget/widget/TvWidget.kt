@@ -201,7 +201,8 @@ private fun WidgetContent() {
 private fun WeekStrip(releases: List<Release>) {
     val days = BooleanArray(7)
     releases.forEach { release ->
-        if (release.dayOffset in 0..6) days[release.dayOffset] = true
+        val away = release.daysAway()
+        if (away in 0..6) days[away] = true
     }
     Box(
         modifier = GlanceModifier

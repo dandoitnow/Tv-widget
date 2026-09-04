@@ -99,8 +99,8 @@ fun TodayFeed(
 
 /** Which horizon a release belongs to. Three bands is enough; more would be a calendar. */
 private fun bandOf(release: Release): String = when {
-    release.dayOffset <= 0 -> "TONIGHT"
-    release.dayOffset < 7 -> "THIS WEEK"
+    release.daysAway() <= 0 -> "TONIGHT"
+    release.daysAway() < 7 -> "THIS WEEK"
     else -> "LATER"
 }
 
@@ -263,7 +263,7 @@ private fun ReleaseRow(
                     // A future episode leads with its countdown instead of its episode number —
                     // days-away is the more useful glance value while it's still ahead; today's and
                     // aired rows keep the code.
-                    text = if (release.dayOffset > 0) release.countdownLabel() else release.episodeCode,
+                    text = if (release.daysAway() > 0) release.countdownLabel() else release.episodeCode,
                     style = Tokens.numeric(
                         Dimens.accentLabelSize(),
                         Tokens.dim(Tokens.TextPrimary, dimmed),

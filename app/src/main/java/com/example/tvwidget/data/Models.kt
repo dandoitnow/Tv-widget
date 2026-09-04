@@ -60,8 +60,29 @@ data class Release(
     val episodeNumber: Int = 0,
     val seasonEpisodeCount: Int = 0,
 ) {
-    val isToday: Boolean get() = dayOffset == 0
-    val hasAired: Boolean get() = dayOffset < 0
+    /**
+     * Days from today, recomputed against the clock rather than trusted from storage.
+     *
+     * [dayOffset] is a snapshot taken when the sync ran, and on this device a sync can be deferred
+     * for a long time — that deferral is the root of every widget bug this app has had. A stored
+     * offset that goes unrefreshed does not merely become stale, it becomes *wrong*: a release that
+     * aired two days ago still reports offset 0, so the widget keeps announcing it as TONIGHT and
+     * [hasAired] never drops it from the list.
+     *
+     * Deriving it from the absolute air time makes the widget degrade into being out of date rather
+     * than into being confidently incorrect, which is the difference that matters. The stored value
+     * is still the fallback for rows that carry no timestamp (the bundled sample content).
+     */
+    fun daysAway(now: Long = System.currentTimeMillis()): Int {
+        val at = airEpochMillis ?: return dayOffset
+        val zone = java.time.ZoneId.systemDefault()
+        val today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val airDay = java.time.Instant.ofEpochMilli(at).atZone(zone).toLocalDate()
+        return java.time.temporal.ChronoUnit.DAYS.between(today, airDay).toInt()
+    }
+
+    val isToday: Boolean get() = daysAway() == 0
+    val hasAired: Boolean get() = daysAway() < 0
 
     /**
      * Whether this release is close enough for a live ticking countdown.
@@ -106,11 +127,13 @@ data class Release(
      * the entire job of a label someone glances at from across a room.
      */
     val humanDay: String
-        get() = when {
-            dayOffset < 0 -> dayLabel
-            dayOffset == 0 -> "TONIGHT"
-            dayOffset == 1 -> "TOMORROW"
-            dayOffset < 7 -> WEEKDAY_NAMES[dayLabel.take(3).uppercase()] ?: dayLabel
+        get() = when (val away = daysAway()) {
+            // dayLabel stays correct however stale the offset gets: it names an absolute date, where
+            // the offset names a distance from a "today" that has since moved on.
+            in Int.MIN_VALUE..-1 -> dayLabel
+            0 -> "TONIGHT"
+            1 -> "TOMORROW"
+            in 2..6 -> WEEKDAY_NAMES[dayLabel.take(3).uppercase()] ?: dayLabel
             else -> dayLabel
         }
 

@@ -38,14 +38,31 @@ object TrackedShowsRepository {
     fun isTracked(context: Context, tvMazeId: Int): Boolean =
         list(context).any { it.tvMazeId == tvMazeId }
 
-    fun add(context: Context, show: TrackedShow) {
-        val current = list(context)
-        if (current.any { it.tvMazeId == show.tvMazeId }) return
-        save(context, current + show)
+    /**
+     * The one way this list is ever changed.
+     *
+     * Every mutation here is a read, a modify and a write, and they are called from at least four
+     * places that do not coordinate: the Catalog screen, the widget's track button (a broadcast on
+     * its own thread), the sync worker backfilling IMDb ids, and the recommender backfilling genres
+     * — the last of which writes an entry per show from a parallel `awaitAll`. Two of those
+     * overlapping means one read sees the list before the other's write, and that update is simply
+     * lost with nothing to show for it.
+     *
+     * A plain lock is sufficient because all of it runs in one process; SharedPreferences is
+     * per-process, so there is no second writer to coordinate with.
+     */
+    private fun mutate(context: Context, transform: (List<TrackedShow>) -> List<TrackedShow>) {
+        synchronized(lock) { save(context, transform(list(context))) }
     }
 
-    fun remove(context: Context, tvMazeId: Int) {
-        save(context, list(context).filterNot { it.tvMazeId == tvMazeId })
+    private val lock = Any()
+
+    fun add(context: Context, show: TrackedShow) = mutate(context) { current ->
+        if (current.any { it.tvMazeId == show.tvMazeId }) current else current + show
+    }
+
+    fun remove(context: Context, tvMazeId: Int) = mutate(context) { current ->
+        current.filterNot { it.tvMazeId == tvMazeId }
     }
 
     /**
@@ -53,20 +70,24 @@ object TrackedShowsRepository {
      * episode lookup turns up an id for a show tracked before [TrackedShow.imdbId] existed, so
      * already-tracked shows get a working IMDb link without needing to be re-tracked.
      */
-    fun updateImdbId(context: Context, tvMazeId: Int, imdbId: String) {
-        val current = list(context)
-        if (current.none { it.tvMazeId == tvMazeId && it.imdbId != imdbId }) return
-        save(context, current.map { if (it.tvMazeId == tvMazeId) it.copy(imdbId = imdbId) else it })
+    fun updateImdbId(context: Context, tvMazeId: Int, imdbId: String) = mutate(context) { current ->
+        if (current.none { it.tvMazeId == tvMazeId && it.imdbId != imdbId }) {
+            current
+        } else {
+            current.map { if (it.tvMazeId == tvMazeId) it.copy(imdbId = imdbId) else it }
+        }
     }
 
     /**
      * Backfills genres for a show tracked before they were stored, so [Recommender] only ever pays
      * the lookup cost once per show rather than on every visit to the RECOMMENDED tab.
      */
-    fun updateGenres(context: Context, tvMazeId: Int, genres: List<String>) {
-        val current = list(context)
-        if (current.none { it.tvMazeId == tvMazeId && it.genres != genres }) return
-        save(context, current.map { if (it.tvMazeId == tvMazeId) it.copy(genres = genres) else it })
+    fun updateGenres(context: Context, tvMazeId: Int, genres: List<String>) = mutate(context) { current ->
+        if (current.none { it.tvMazeId == tvMazeId && it.genres != genres }) {
+            current
+        } else {
+            current.map { if (it.tvMazeId == tvMazeId) it.copy(genres = genres) else it }
+        }
     }
 
     private fun save(context: Context, shows: List<TrackedShow>) {

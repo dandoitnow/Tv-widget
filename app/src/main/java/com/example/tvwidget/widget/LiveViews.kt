@@ -80,7 +80,7 @@ object LiveViews {
         } else {
             views.setTextViewText(
                 R.id.hero_primary,
-                if (release.dayOffset > 0) release.countdownLabel() else release.episodeCode,
+                if (release.daysAway() > 0) release.countdownLabel() else release.episodeCode,
             )
         }
         views.setTextViewTextSize(R.id.hero_primary, TypedValue.COMPLEX_UNIT_SP, primarySizeSp)
