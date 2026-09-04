@@ -98,7 +98,11 @@ object Recommender {
         val shared = best?.genres.orEmpty().filter { it in candidate.genres }
         return when {
             best == null || shared.isEmpty() -> candidate.genres.take(2).joinToString(" · ").uppercase()
-            else -> "BECAUSE YOU TRACK ${best.title.uppercase()}"
+            // "LIKE SILO", not "BECAUSE YOU TRACK SILO". The reason shares a narrow column with a
+            // poster and a TRACK button, and at this size with real tracking the longer phrase spent
+            // the entire width on its own preamble — every row read "BECAUSE YOU TRACK" with the
+            // show name clipped off, which is the one word that carried the information.
+            else -> "LIKE ${best.title.uppercase()}"
         }
     }
 
