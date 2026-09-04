@@ -54,7 +54,7 @@
             android:background="@drawable/surface_pill"
             android:gravity="center"
             android:fontFamily="sans-serif-medium"
-            android:text="@string/preview_tab_catalogue"
+            android:text="@string/preview_tab_catalog"
             android:textColor="#8AEDE6DA"
             android:textSize="11sp" />
     </LinearLayout>

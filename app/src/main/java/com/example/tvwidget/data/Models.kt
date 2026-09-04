@@ -15,8 +15,8 @@ private val WEEKDAY_NAMES = mapOf(
 /**
  * Which tab the widget is showing. Persisted by [name].
  *
- * CATALOGUE isn't one of these — there's no widget-side content for it, just a header button that
- * opens the app straight into its Catalogue screen (Favorites + Recommended + search, all native
+ * CATALOG isn't one of these — there's no widget-side content for it, just a header button that
+ * opens the app straight into its Catalog screen (Favorites + Recommended + search, all native
  * Android views — see [com.example.tvwidget.MainActivity]).
  */
 enum class Tab { TODAY, ANTICIPATED }
@@ -180,12 +180,12 @@ data class FavoriteShow(
 }
 
 /**
- * One TVMaze show shown in [com.example.tvwidget.MainActivity]'s Catalogue screen — a search hit, a
+ * One TVMaze show shown in [com.example.tvwidget.MainActivity]'s Catalog screen — a search hit, a
  * tracked-list entry, or a TRENDING row (today's popular currently-running shows via
  * [TvMazeApi.browse]).
  */
 @Serializable
-data class CatalogueShow(
+data class CatalogShow(
     val tvMazeId: Int,
     val title: String,
     val network: String,
@@ -196,7 +196,7 @@ data class CatalogueShow(
 )
 
 /**
- * A show the user added from CATALOGUE. Stored app-wide (not per-widget-instance) in
+ * A show the user added from CATALOG. Stored app-wide (not per-widget-instance) in
  * [TrackedShowsRepository]; the sync worker turns this list into TODAY's [Release] rows by pulling
  * each show's previous/next episode from TVMaze.
  */

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Picker thumbnail: the widget as it actually looks — warm near-black rounded ground, one row of
-  three capsule tabs (TODAY / POPULAR / CATALOGUE, with POPULAR lit), and soft-cornered rows
+  three capsule tabs (TODAY / POPULAR / CATALOG, with POPULAR lit), and soft-cornered rows
   floating on air rather than separated by rules.
 
   Keep this in sync with Header.kt and the surface_* drawables. This is the only view of the widget

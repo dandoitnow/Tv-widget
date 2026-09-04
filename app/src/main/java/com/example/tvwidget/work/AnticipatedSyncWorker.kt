@@ -44,12 +44,12 @@ import java.util.concurrent.TimeUnit
  *  3. Caches poster art for everything above via [PosterStore], since widgets can't fetch images at
  *     draw time.
  *
- * CATALOGUE's RECOMMENDED browse list is *not* synced here — it's fetched live by
+ * CATALOG's RECOMMENDED browse list is *not* synced here — it's fetched live by
  * `MainActivity` when that screen opens, since it's a plain Activity list with no widget-side
  * state or poster-preload constraint to work around.
  *
  * Runs on a daily timer, plus once immediately whenever [runOnce] is called (tracking/untracking a
- * show from the Catalogue screen).
+ * show from the Catalog screen).
  */
 class AnticipatedSyncWorker(
     context: Context,
@@ -205,7 +205,7 @@ class AnticipatedSyncWorker(
             )
         }
 
-        /** Immediate one-off run — used right after a show is tracked/untracked from the Catalogue screen. */
+        /** Immediate one-off run — used right after a show is tracked/untracked from the Catalog screen. */
         fun runOnce(context: Context) {
             val request = OneTimeWorkRequestBuilder<AnticipatedSyncWorker>()
                 .setConstraints(

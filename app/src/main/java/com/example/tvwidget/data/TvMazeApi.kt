@@ -74,7 +74,7 @@ object TvMazeApi {
     private val scheduleCache = ConcurrentHashMap<Int, Pair<Long, ShowSchedule>>()
 
     @Volatile
-    private var browseCache: Pair<Long, List<CatalogueShow>>? = null
+    private var browseCache: Pair<Long, List<CatalogShow>>? = null
 
     @Volatile
     private var popularCache: Pair<Long, List<AnticipatedShow>>? = null
@@ -85,18 +85,18 @@ object TvMazeApi {
      * default relevance order, so a query like "love island" surfaces the well-known original ahead
      * of its many regional spin-offs and unrelated same-named shows.
      */
-    suspend fun search(query: String): List<CatalogueShow> = withContext(Dispatchers.IO) {
+    suspend fun search(query: String): List<CatalogShow> = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(query, "UTF-8")
         val body = get("$BASE/search/shows?q=$encoded") ?: return@withContext emptyList()
         val results = JSONArray(body)
         (0 until results.length())
             .mapNotNull { i -> results.optJSONObject(i)?.optJSONObject("show") }
             .sortedByDescending { it.optInt("weight", 0) }
-            .map(::toCatalogueShow)
+            .map(::toCatalogShow)
     }
 
     /**
-     * A "trending" slice for CATALOGUE's TRENDING tab. TVMaze has no dedicated trending endpoint, so
+     * A "trending" slice for CATALOG's TRENDING tab. TVMaze has no dedicated trending endpoint, so
      * this approximates one: the web/TV schedule (i.e. shows actually airing something right now,
      * not TVMaze's full multi-thousand-show index) ranked by its own `weight` field — the same
      * popularity signal [search] re-ranks by. "Currently running" plus "popular" together is a
@@ -115,7 +115,7 @@ object TvMazeApi {
      *   "the network is down" apart from "fetched fine, nothing is scheduled" — [get] swallows its
      *   own failures into a `null` body, so that distinction has to be made here.
      */
-    suspend fun browse(limit: Int = 120): List<CatalogueShow> = withContext(Dispatchers.IO) {
+    suspend fun browse(limit: Int = 120): List<CatalogShow> = withContext(Dispatchers.IO) {
         browseCache?.let { (fetchedAt, cached) ->
             if (System.currentTimeMillis() - fetchedAt < BROWSE_TTL_MS) {
                 return@withContext cached.take(limit)
@@ -145,7 +145,7 @@ object TvMazeApi {
         }
         shows.values
             .sortedByDescending { it.optInt("weight", 0) }
-            .map(::toCatalogueShow)
+            .map(::toCatalogShow)
             .also { browseCache = System.currentTimeMillis() to it }
             .take(limit)
     }
@@ -335,11 +335,11 @@ object TvMazeApi {
     private fun imdbIdFrom(json: JSONObject): String? =
         json.optJSONObject("externals")?.optString("imdb")?.takeIf { it.isNotBlank() && it != "null" }
 
-    private fun toCatalogueShow(json: JSONObject): CatalogueShow {
+    private fun toCatalogShow(json: JSONObject): CatalogShow {
         val network = json.optJSONObject("network")?.optString("name")
             ?: json.optJSONObject("webChannel")?.optString("name")
             ?: "UNKNOWN"
-        return CatalogueShow(
+        return CatalogShow(
             tvMazeId = json.optInt("id"),
             title = json.optString("name"),
             network = network.uppercase(java.util.Locale.US),

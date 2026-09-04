@@ -46,7 +46,7 @@ import com.example.tvwidget.ui.Tokens
  * The 5x2 TV release tracker widget.
  *
  * All widget state lives in the Glance `DataStore` ([PreferencesGlanceStateDefinition]) so the
- * widget restores identically after a launcher restart. CATALOGUE (Favorites + Trending + search)
+ * widget restores identically after a launcher restart. CATALOG (Favorites + Trending + search)
  * isn't a tab here at all — see [Header] — so there are only two.
  */
 class TvWidget : GlanceAppWidget() {
