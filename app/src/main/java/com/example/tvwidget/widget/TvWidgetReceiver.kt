@@ -1,5 +1,6 @@
 package com.example.tvwidget.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -8,7 +9,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.state.getAppWidgetState
+import androidx.glance.state.PreferencesGlanceStateDefinition
+import com.example.tvwidget.data.WidgetState
 import com.example.tvwidget.work.AnticipatedSyncWorker
 
 /**
@@ -23,6 +28,9 @@ import com.example.tvwidget.work.AnticipatedSyncWorker
  */
 class TvWidgetReceiver : GlanceAppWidgetReceiver() {
 
+    /** Comfortably longer than the daily sync's own period, so a healthy app never trips it. */
+    private val STALE_AFTER_MS = 36 * 60 * 60 * 1000L
+
     override val glanceAppWidget: GlanceAppWidget = TvWidget()
 
     override fun onEnabled(context: Context) {
@@ -30,6 +38,70 @@ class TvWidgetReceiver : GlanceAppWidgetReceiver() {
         AnticipatedSyncWorker.schedule(context)
         // Otherwise CATALOG and real poster art wouldn't show up until the first daily tick.
         AnticipatedSyncWorker.runOnce(context)
+    }
+
+    /**
+     * The launcher's own periodic refresh, and the app's only self-healing path.
+     *
+     * `updatePeriodMillis` makes the platform call this roughly every half hour. That matters
+     * disproportionately here: every widget failure this app has had traced back to trusting work
+     * the platform is free to defer, and this is the one trigger it is not free to defer. It is
+     * therefore the natural floor under everything else — a widget showing stale views, a countdown
+     * left ticking past zero because its one-shot refresh job never ran, a sync that has quietly not
+     * happened for days.
+     *
+     * The redraw is unconditional and cheap. The *sync* is not, so it only fires when the scheduled
+     * one has visibly stopped happening: re-syncing every half hour would trade this app's whole
+     * battery story for a safety net that is almost never needed.
+     */
+    override fun onUpdate(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray,
+    ) {
+        super.onUpdate(context, appWidgetManager, appWidgetIds)
+        launchGuarded(context, "periodic redraw") {
+            WidgetRedraw.all(context)
+            if (syncIsOverdue(context)) AnticipatedSyncWorker.runOnce(context)
+        }
+    }
+
+    /**
+     * Runs background work for a broadcast without letting it take the process down.
+     *
+     * Two hazards, both learned the hard way. `goAsync()` returns *null* when the receiver is not in
+     * a live broadcast dispatch — which is exactly the case in `onUpdate`, because Glance's own
+     * `onReceive` has already claimed the pending result before dispatching to us. Calling `finish()`
+     * on that null crashed the app the first time this ran.
+     *
+     * And an exception escaping a bare `CoroutineScope` is fatal: there is no Activity or Worker
+     * above it to catch anything, so a failed redraw becomes a crash dialog on the home screen. Both
+     * are handled here once, rather than at each call site where one of them will eventually be
+     * forgotten.
+     */
+    private fun launchGuarded(context: Context, what: String, block: suspend () -> Unit) {
+        val pending = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            try {
+                block()
+            } catch (failure: Throwable) {
+                Log.w("TvWidget", "Widget $what failed", failure)
+            } finally {
+                pending?.finish()
+            }
+        }
+    }
+
+    /**
+     * True when no sync has landed in [STALE_AFTER_MS]. The daily job should keep this false on its
+     * own; if it is true, that job is not running and something has to notice.
+     */
+    private suspend fun syncIsOverdue(context: Context): Boolean {
+        val glanceId = GlanceAppWidgetManager(context).getGlanceIds(TvWidget::class.java).firstOrNull()
+            ?: return false
+        val prefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId)
+        val last = WidgetState.lastSync(prefs)
+        return last == 0L || System.currentTimeMillis() - last > STALE_AFTER_MS
     }
 
     override fun onDisabled(context: Context) {
@@ -67,15 +139,6 @@ class TvWidgetReceiver : GlanceAppWidgetReceiver() {
         // goAsync keeps the broadcast alive for the compose. This receiver is running, so the work
         // has a live process by definition; nothing here depends on a job being scheduled or a
         // Glance session being alive.
-        val pending = goAsync()
-        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            try {
-                WidgetRedraw.all(context)
-            } catch (failure: Throwable) {
-                Log.w("TvWidget", "Post-update redraw failed", failure)
-            } finally {
-                pending.finish()
-            }
-        }
+        launchGuarded(context, "post-update redraw") { WidgetRedraw.all(context) }
     }
 }

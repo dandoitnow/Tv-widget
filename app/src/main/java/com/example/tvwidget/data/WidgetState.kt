@@ -50,6 +50,15 @@ object WidgetState {
             ?: SampleData.releases()
 
 
+    /**
+     * When the last successful sync finished, or 0 if there has never been one.
+     *
+     * Read by the widget's own `onUpdate`, which is the one refresh trigger the platform drives
+     * rather than WorkManager — so it is the only place that can reliably notice the scheduled sync
+     * has not been running and do something about it.
+     */
+    fun lastSync(prefs: Preferences): Long = prefs[LAST_SYNC] ?: 0L
+
     /** Rows currently revealed on the active tab. Reset to one page whenever the tab changes. */
     fun visibleRows(prefs: Preferences): Int =
         (prefs[VISIBLE_ROWS] ?: Dimens.RowPage).coerceIn(Dimens.RowPage, Dimens.MaxWidgetRows)
