@@ -49,7 +49,6 @@ object WidgetState {
         decode(prefs[TRACKED_RELEASES], releaseSerializer)?.takeIf { it.isNotEmpty() }
             ?: SampleData.releases()
 
-    fun lastSync(prefs: Preferences): Long = prefs[LAST_SYNC] ?: 0L
 
     /** Rows currently revealed on the active tab. Reset to one page whenever the tab changes. */
     fun visibleRows(prefs: Preferences): Int =

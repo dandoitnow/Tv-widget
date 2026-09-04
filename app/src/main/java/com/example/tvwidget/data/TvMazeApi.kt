@@ -14,7 +14,7 @@ import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
 
 /**
  * Thin client for the [TVMaze API](https://www.tvmaze.com/api) — free, keyless, and enough to back
@@ -73,7 +73,22 @@ object TvMazeApi {
         val genres: List<String> = emptyList(),
     )
 
-    private val scheduleCache = ConcurrentHashMap<Int, Pair<Long, ShowSchedule>>()
+    /**
+     * Per-show episode lookups, bounded.
+     *
+     * This grows by one entry per distinct show ever looked up, and the Catalog now resolves an
+     * episode code for every row it renders — so browsing a long list used to add an entry per show
+     * scrolled past, permanently. The TTL expires the *contents*, never the keys; only a bound
+     * expires the keys.
+     */
+    private const val MAX_CACHED_SCHEDULES = 120
+
+    private val scheduleCache = Collections.synchronizedMap(
+        object : LinkedHashMap<Int, Pair<Long, ShowSchedule>>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Pair<Long, ShowSchedule>>) =
+                size > MAX_CACHED_SCHEDULES
+        }
+    )
 
     @Volatile
     private var browseCache: Pair<Long, List<CatalogShow>>? = null
