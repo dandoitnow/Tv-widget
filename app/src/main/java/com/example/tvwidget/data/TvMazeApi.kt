@@ -40,6 +40,22 @@ object TvMazeApi {
     /** How many days of schedule [browse] pools together. See its doc for why this isn't 1. */
     private const val BROWSE_DAYS = 4
 
+    /**
+     * How far ahead [popular] looks. Long enough that the window reliably contains real premieres
+     * rather than only mid-season episodes, and short enough to stay affordable: each day costs two
+     * requests of roughly 100-200KB, so this is the length where "enough premieres to be worth
+     * scrolling" stops being cheap.
+     */
+    private const val POPULAR_DAYS = 10
+
+    /**
+     * Much longer than [BROWSE_TTL_MS], because this is the expensive call and the least volatile
+     * thing the app fetches. A ten-day schedule does not meaningfully change within a few hours, and
+     * `runOnce` fires on every single track/untrack tap — without a long TTL, tracking four shows in
+     * a row would re-pull twenty requests four times over to produce the same list.
+     */
+    private const val POPULAR_TTL_MS = 6 * 60 * 60_000L
+
     data class EpisodeInfo(val airDate: LocalDate, val airTime: String, val code: String)
     data class ShowSchedule(val previous: EpisodeInfo?, val next: EpisodeInfo?, val imdbId: String? = null)
 
@@ -47,6 +63,9 @@ object TvMazeApi {
 
     @Volatile
     private var browseCache: Pair<Long, List<CatalogueShow>>? = null
+
+    @Volatile
+    private var popularCache: Pair<Long, List<AnticipatedShow>>? = null
 
     /**
      * Free-text search, used by the search screen in `MainActivity`. Results are re-ranked by
@@ -117,6 +136,118 @@ object TvMazeApi {
             .map(::toCatalogueShow)
             .also { browseCache = System.currentTimeMillis() to it }
             .take(limit)
+    }
+
+    /**
+     * The POPULAR tab's feed: notable episodes landing over the next couple of weeks, ranked by
+     * TVMaze's own `weight` popularity signal.
+     *
+     * This replaced a hardcoded list of six shows whose air dates were baked in at authoring time
+     * and had long since drifted into the past. Six is also simply too few for a tab you scroll.
+     *
+     * The window is wider than [browse]'s because the two tabs want different things. TRENDING is
+     * "what is on right now", so a few days is the whole point. POPULAR is "what is coming", which
+     * needs enough runway to actually contain premieres — most weeks have none at all inside four
+     * days. [POPULAR_DAYS] is where that stops being true without the request count getting silly.
+     *
+     * One entry per show, keeping its earliest upcoming episode, so a show airing daily doesn't
+     * occupy half the list. Episodes airing earlier today are dropped: this list is about what is
+     * still ahead.
+     */
+    suspend fun popular(limit: Int = 40): List<AnticipatedShow> = withContext(Dispatchers.IO) {
+        popularCache?.let { (fetchedAt, cached) ->
+            if (System.currentTimeMillis() - fetchedAt < POPULAR_TTL_MS) return@withContext cached.take(limit)
+        }
+        val today = LocalDate.now()
+        val urls = (0 until POPULAR_DAYS).flatMap { offset ->
+            val date = today.plusDays(offset.toLong()).format(DateTimeFormatter.ISO_LOCAL_DATE)
+            listOf("$BASE/schedule/web?date=$date", "$BASE/schedule?date=$date")
+        }
+        val bodies = coroutineScope { urls.map { async { get(it) } }.awaitAll() }.filterNotNull()
+        if (bodies.isEmpty()) throw java.io.IOException("All TVMaze schedule requests failed")
+
+        // Keyed by show id, keeping whichever episode airs soonest.
+        val soonest = HashMap<Int, Pair<JSONObject, JSONObject>>()
+        bodies.forEach { body ->
+            val entries = JSONArray(body)
+            for (i in 0 until entries.length()) {
+                val episode = entries.optJSONObject(i) ?: continue
+                val show = episode.optJSONObject("show")
+                    ?: episode.optJSONObject("_embedded")?.optJSONObject("show")
+                    ?: continue
+                val airDate = runCatching { LocalDate.parse(episode.optString("airdate")) }.getOrNull()
+                    ?: continue
+                if (airDate.isBefore(today)) continue
+                val id = show.optInt("id")
+                val existing = soonest[id]
+                if (existing == null || airDate.isBefore(airDateOf(existing.second))) {
+                    soonest[id] = show to episode
+                }
+            }
+        }
+
+        soonest.values
+            .sortedByDescending { (show, episode) -> rankOf(show, episode) }
+            .map { (show, episode) -> toAnticipatedShow(show, episode, today) }
+            .also { popularCache = System.currentTimeMillis() to it }
+            .take(limit)
+    }
+
+    /**
+     * Ordering score for POPULAR. Popularity alone is not enough: TVMaze's weight tops out at 100
+     * for a great many long-running shows, so a straight weight sort fills the head of the list with
+     * `Cops`, `WWE`, `The Daily Show` and `Big Brother` — all genuinely popular, none of them
+     * something to tell someone about, and collectively indistinguishable from what TRENDING already
+     * shows. A real sample of the next fortnight put only two premieres in the top twenty-five.
+     *
+     * So premieres get a boost. The size of it matters more than it looks: a larger boost (+55/+40
+     * was the first attempt) swamps the weight entirely, and the list then ranks a weight-85 foreign
+     * reality pilot above a weight-99 return of a flagship drama, which is plainly wrong. These
+     * values tilt the ordering without overriding it — premieres lead, but popularity still decides
+     * the order among them.
+     *
+     * The score orders the list only. [AnticipatedShow.hypePercent] keeps the raw weight, because
+     * the hype bar is showing popularity and should not show something invented.
+     */
+    private fun rankOf(show: JSONObject, episode: JSONObject): Int {
+        val weight = show.optInt("weight", 0)
+        val season = episode.optInt("season", 0)
+        val number = episode.optInt("number", 0)
+        return weight + when {
+            number == 1 && season <= 1 -> 24 // a brand new series is the most interesting row here
+            number == 1 -> 18 // a returning season
+            else -> 0
+        }
+    }
+
+    private fun airDateOf(episode: JSONObject): LocalDate =
+        runCatching { LocalDate.parse(episode.optString("airdate")) }.getOrDefault(LocalDate.MAX)
+
+    private fun toAnticipatedShow(show: JSONObject, episode: JSONObject, today: LocalDate): AnticipatedShow {
+        val airDate = airDateOf(episode)
+        val season = episode.optInt("season", 0)
+        val number = episode.optInt("number", 0)
+        val network = show.optJSONObject("network")?.optString("name")
+            ?: show.optJSONObject("webChannel")?.optString("name")
+            ?: "UNKNOWN"
+        return AnticipatedShow(
+            title = show.optString("name"),
+            // A first episode is the interesting case, and season 1 of it doubly so — those are the
+            // rows worth putting a list like this in front of someone for.
+            kind = when {
+                number == 1 && season <= 1 -> "NEW SERIES"
+                number == 1 -> "S%02d PREMIERE".format(season)
+                else -> "S%02dE%02d".format(season, number)
+            },
+            network = network.uppercase(java.util.Locale.US),
+            premiereDate = airDate.format(DateTimeFormatter.ofPattern("dd MMM", java.util.Locale.US))
+                .uppercase(java.util.Locale.US),
+            daysAway = java.time.temporal.ChronoUnit.DAYS.between(today, airDate).toInt(),
+            // TVMaze's weight is already a 0..100 popularity score, which is exactly what the hype
+            // bar wants — no rescaling, and no invented number pretending to be a measurement.
+            hypePercent = show.optInt("weight", 0).coerceIn(0, 100),
+            posterUrl = show.optJSONObject("image")?.optString("medium")?.takeIf { it.isNotBlank() },
+        )
     }
 
     /**
