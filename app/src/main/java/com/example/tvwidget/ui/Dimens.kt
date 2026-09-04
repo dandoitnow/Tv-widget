@@ -170,6 +170,20 @@ object Dimens {
     }
 
     /**
+     * A hard width for the countdown block.
+     *
+     * The embedded `RemoteViews` subtree does not participate in the row's weight distribution the
+     * way a Glance composable does, so left unconstrained it took as much width as it liked and
+     * collapsed the title column to nothing. Sized generously enough for `23:59:59` at each tier.
+     */
+    @Composable
+    fun heroCountdownWidth(): Dp = when (tier()) {
+        Tier.COMPACT -> 76.dp
+        Tier.ROOMY -> 100.dp
+        Tier.XL -> 124.dp
+    }
+
+    /**
      * The hero's title. Fixed for the same reason [TitleSize] is — it shares a row with a poster and
      * a countdown column that do not shrink to make room — but a little larger, because being
      * larger is most of how the hero says it is the hero.

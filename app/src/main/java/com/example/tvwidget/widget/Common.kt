@@ -13,7 +13,6 @@ import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.ContentScale
-import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
@@ -38,9 +37,11 @@ import com.example.tvwidget.ui.Tokens
  *    row is lit by its own artwork. A shelf of shows then reads as a shelf of *different* shows
  *    rather than as repeated furniture.
  *
- * The edge light is added before [content] so content sits above it in the frame — which matters for
- * more than paint order, since in a `FrameLayout` the topmost child is the one that gets the touch.
- * A wash drawn over the row would quietly eat every tap in it.
+ * Both are composited into the *same* bitmap by [Surfaces.row] rather than layered as views. The
+ * wash was an overlay `Box` at first and that was wrong twice: `fillMaxSize` inside a wrap-content
+ * `FrameLayout` measures against the parent's available height and dragged the row's background out
+ * to fill the whole widget, and a view stacked over the content would have swallowed every tap in
+ * the row. One bitmap has neither problem.
  *
  * The gap is applied as bottom padding *outside* the surface rather than as a spacer item, so the
  * air belongs to the row and a list never ends on a stray gap.
@@ -58,20 +59,10 @@ fun RowSurface(
                 .fillMaxWidth()
                 .cornerRadiusCompat(Tokens.RadiusRow)
                 .background(
-                    ImageProvider(Surfaces.row(today = today, depth = depth)),
+                    ImageProvider(Surfaces.row(today = today, depth = depth, accent = edgeAccent)),
                     contentScale = ContentScale.FillBounds,
                 ),
         ) {
-            if (edgeAccent != null) {
-                Box(
-                    modifier = GlanceModifier
-                        .fillMaxSize()
-                        .background(
-                            ImageProvider(Surfaces.edgeLight(edgeAccent)),
-                            contentScale = ContentScale.FillBounds,
-                        ),
-                ) {}
-            }
             content()
         }
     }
