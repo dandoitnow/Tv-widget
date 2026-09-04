@@ -12,7 +12,6 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -29,6 +28,7 @@ import com.example.tvwidget.data.TvMazeAnticipatedSource
 import com.example.tvwidget.data.TvMazeApi
 import com.example.tvwidget.data.WidgetState
 import com.example.tvwidget.widget.TvWidget
+import com.example.tvwidget.widget.WidgetRedraw
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -75,7 +75,7 @@ class AnticipatedSyncWorker(
                 prefs[WidgetState.LAST_SYNC] = now
             }
         }
-        TvWidget().updateAll(applicationContext)
+        WidgetRedraw.all(applicationContext)
 
         // Book a redraw for when the next release actually airs, so the live countdown is not left
         // ticking past zero into negative time. See WidgetRefreshWorker.

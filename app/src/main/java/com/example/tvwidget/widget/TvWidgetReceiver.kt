@@ -2,6 +2,11 @@ package com.example.tvwidget.widget
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import com.example.tvwidget.work.AnticipatedSyncWorker
@@ -44,9 +49,33 @@ class TvWidgetReceiver : GlanceAppWidgetReceiver() {
      */
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
-            AnticipatedSyncWorker.schedule(context)
-            AnticipatedSyncWorker.runOnce(context)
+        if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+
+        AnticipatedSyncWorker.schedule(context)
+        AnticipatedSyncWorker.runOnce(context)
+
+        // Redraw here and now, rather than leaving it to the sync above.
+        //
+        // An app update is the one moment a widget is guaranteed to be holding RemoteViews that no
+        // longer match the app that produced them. Upgrading Glance 1.1.0 to 1.2.0 changed the
+        // generated layout resources those views reference, and because the redraw was left to a
+        // WorkManager job that the platform is free to defer — and does, since it freezes this
+        // process in the background — the launcher kept rendering views whose resource ids the new
+        // APK no longer had. The widget went blank, and the only fix from the user's side was to
+        // remove it and add it back.
+        //
+        // goAsync keeps the broadcast alive for the compose. This receiver is running, so the work
+        // has a live process by definition; nothing here depends on a job being scheduled or a
+        // Glance session being alive.
+        val pending = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            try {
+                WidgetRedraw.all(context)
+            } catch (failure: Throwable) {
+                Log.w("TvWidget", "Post-update redraw failed", failure)
+            } finally {
+                pending.finish()
+            }
         }
     }
 }
