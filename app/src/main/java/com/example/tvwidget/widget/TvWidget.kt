@@ -77,8 +77,10 @@ private fun WidgetContent() {
     // *starts* at today's first release — Glance's LazyColumn has no scroll-to-index API to jump
     // there on a tap, so the only way to guarantee landing on today is for there to be nothing
     // rendered above it to land past.
-    val todayReleases = releases.filterNot { it.hasAired }
-    val anticipated = WidgetState.anticipated(prefs)
+    // Capped at Dimens.MaxWidgetRows: a LazyColumn parcels every item it is given, and the whole
+    // RemoteViews has to fit through a Binder transaction. See Dimens.MaxWidgetRows.
+    val todayReleases = releases.filterNot { it.hasAired }.take(Dimens.MaxWidgetRows)
+    val anticipated = WidgetState.anticipated(prefs).take(Dimens.MaxWidgetRows)
 
     // Read directly here — reactively, off `tab`/`releases`/`anticipated` above — rather than as a
     // value computed once in `provideGlance` and passed down. `provideGlance`'s suspend body isn't
@@ -94,7 +96,8 @@ private fun WidgetContent() {
     }
     val context = LocalContext.current
     val keys = posterTitles.map(PosterStore::keyFor)
-    val posters = PosterStore.loadBitmapsBlocking(context, keys)
+    // Downscaled: these bitmaps get parcelled into the RemoteViews, once per row.
+    val posters = PosterStore.loadBitmapsBlocking(context, keys, Dimens.WidgetPosterWidthPx)
     // Dominant colours for the per-row edge light. Memoized alongside the bitmaps above, so for
     // anything already being drawn this costs a map lookup.
     val accents = PosterStore.loadAccentsBlocking(context, keys)

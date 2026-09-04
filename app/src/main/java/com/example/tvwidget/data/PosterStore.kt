@@ -68,6 +68,12 @@ object PosterStore {
             size > MAX_MEMORY_ENTRIES
     }
 
+    /** Downscaled widget-sized copies, keyed `poster@width`. See [scaledFor]. */
+    private val scaledCache = object : LinkedHashMap<String, Bitmap>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>) =
+            size > MAX_MEMORY_ENTRIES
+    }
+
     private fun dir(context: Context): File =
         File(context.applicationContext.filesDir, "posters").apply {
             mkdirs()
@@ -157,8 +163,43 @@ object PosterStore {
      * small, already-local, already-cached reads, so a blocking call inside composition is a fine
      * trade for correctness here.
      */
-    fun loadBitmapsBlocking(context: Context, keys: Collection<String>): Map<String, Bitmap> =
-        keys.distinct().mapNotNull { key -> loadOne(context, key)?.let { key to it } }.toMap()
+    fun loadBitmapsBlocking(
+        context: Context,
+        keys: Collection<String>,
+        maxWidthPx: Int? = null,
+    ): Map<String, Bitmap> =
+        keys.distinct().mapNotNull { key ->
+            val bitmap = loadOne(context, key) ?: return@mapNotNull null
+            key to if (maxWidthPx == null) bitmap else scaledFor(key, bitmap, maxWidthPx)
+        }.toMap()
+
+    /**
+     * A smaller, denser copy of a poster, for callers whose bitmaps get parcelled.
+     *
+     * The widget's rows are the reason this exists. Every bitmap drawn into a widget crosses a Binder
+     * transaction with a hard size limit, and a `LazyColumn` parcels *every* item rather than only
+     * the visible ones — so a long list multiplies the cost of each poster by the whole list length,
+     * not by what fits on screen. At the disk cache's 104x144 ARGB_8888 that is 58KB a row, which
+     * overran the limit and killed the launcher's widget host outright.
+     *
+     * `RGB_565` halves it again and costs nothing visible: these are opaque photographs rendered at
+     * roughly a centimetre tall, not gradients where banding would show.
+     *
+     * The app's Catalogue deliberately does *not* pass a width. It draws the same posters far larger
+     * and has no parcelling constraint at all, so it keeps the full-resolution original.
+     */
+    private fun scaledFor(key: String, source: Bitmap, maxWidthPx: Int): Bitmap {
+        if (source.width <= maxWidthPx) return source
+        val cacheKey = "$key@$maxWidthPx"
+        synchronized(scaledCache) { scaledCache[cacheKey]?.let { return it } }
+        val height = (source.height * (maxWidthPx.toFloat() / source.width)).toInt().coerceAtLeast(1)
+        val scaled = runCatching {
+            Bitmap.createScaledBitmap(source, maxWidthPx, height, true)
+                .copy(Bitmap.Config.RGB_565, false)
+        }.getOrNull() ?: return source
+        synchronized(scaledCache) { scaledCache[cacheKey] = scaled }
+        return scaled
+    }
 
     /**
      * The dominant colour of each cached poster, for the per-row edge light (see

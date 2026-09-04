@@ -19,9 +19,16 @@ import android.graphics.Color as AndroidColor
  * only way to vary a fill is to hand it a [Bitmap] — which `ImageProvider(Bitmap)` accepts, and
  * which the widget can then stretch behind content like any other background.
  *
- * These are tiny (most are a handful of pixels wide, stretched by `ContentScale.FillBounds`) and
- * aggressively memoized, because a Glance composable body re-runs on every single interaction.
- * Generating a fresh gradient per recomposition is the kind of waste that shows up as a stutter.
+ * These are aggressively memoized, because a Glance composable body re-runs on every interaction and
+ * generating a fresh gradient per recomposition is the kind of waste that shows up as a stutter.
+ *
+ * They are also deliberately *tiny* — a few pixels in the direction the gradient does not run — and
+ * that is a hard requirement, not tidiness. Every bitmap handed to `ImageProvider` is parcelled into
+ * the widget's RemoteViews and crosses a Binder transaction with a hard size limit. The first
+ * version of this file drew rows at 128x64 ARGB_8888, 32KB each, one per row; combined with a longer
+ * POPULAR list that overran the limit and took the launcher's widget host down with it
+ * (`TransactionTooLargeException: data parcel size 779984 bytes`). Stretched by
+ * `ContentScale.FillBounds`, a linear gradient looks identical at 1/30th the pixels.
  */
 object Surfaces {
 
@@ -62,7 +69,7 @@ object Surfaces {
         val warmth = warmthAt(hour)
         verticalGradient(
             width = 8,
-            height = 256,
+            height = 64,
             colors = intArrayOf(
                 warmed(0xFF14110E.toInt(), warmth),
                 warmed(0xFF0E0C0A.toInt(), warmth),
@@ -128,8 +135,8 @@ object Surfaces {
             } else {
                 intArrayOf(0xFF221D18.toInt(), 0xFF1D1915.toInt(), 0xFF191512.toInt())
             }
-            val w = 128f
-            val h = 64f
+            val w = 64f
+            val h = 4f
             val bitmap = Bitmap.createBitmap(w.toInt(), h.toInt(), Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             val base = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -189,7 +196,7 @@ object Surfaces {
     fun spine(): Bitmap = cached("spine") {
         verticalGradient(
             width = 2,
-            height = 256,
+            height = 64,
             colors = intArrayOf(0x00D8B45F, 0x33D8B45F, 0x1AD8B45F, 0x00D8B45F),
             stops = floatArrayOf(0f, 0.18f, 0.72f, 1f),
         )
