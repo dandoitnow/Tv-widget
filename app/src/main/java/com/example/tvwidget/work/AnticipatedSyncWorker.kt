@@ -16,6 +16,7 @@ import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import com.example.tvwidget.data.AnticipatedShow
 import com.example.tvwidget.data.AnticipatedSource
 import com.example.tvwidget.data.BundledAnticipatedSource
 import com.example.tvwidget.data.PosterStore
@@ -24,6 +25,7 @@ import com.example.tvwidget.data.ReleaseStatus
 import com.example.tvwidget.data.SampleData
 import com.example.tvwidget.data.TrackedShow
 import com.example.tvwidget.data.TrackedShowsRepository
+import com.example.tvwidget.data.TvMazeAnticipatedSource
 import com.example.tvwidget.data.TvMazeApi
 import com.example.tvwidget.data.WidgetState
 import com.example.tvwidget.widget.TvWidget
@@ -59,7 +61,7 @@ class AnticipatedSyncWorker(
         val tracked = TrackedShowsRepository.list(applicationContext)
         val trackedReleases = buildTrackedReleases(tracked)
 
-        cachePosters(anticipated.map { it.title }, tracked)
+        cachePosters(anticipated, tracked)
 
         val encodedAnticipated = WidgetState.encodeAnticipated(anticipated)
         val encodedReleases = WidgetState.encodeReleases(trackedReleases)
@@ -146,15 +148,24 @@ class AnticipatedSyncWorker(
      * leaving it stuck on the placeholder. Doing the few tracked posters first, concurrently, secures
      * them well before a follow-up tap has any chance to cancel the run.
      */
-    private suspend fun cachePosters(anticipatedTitles: List<String>, tracked: List<TrackedShow>) = coroutineScope {
+    private suspend fun cachePosters(anticipated: List<AnticipatedShow>, tracked: List<TrackedShow>) = coroutineScope {
         tracked.map { show ->
             async { PosterStore.ensureCached(applicationContext, PosterStore.keyFor(show.title), show.posterUrl) }
         }.awaitAll()
 
-        // Sample/demo titles (TODAY's bundled seed data, ANTICIPATED) have no known poster URL —
-        // resolve one by title via TVMaze's single-show search.
-        val demoTitles = (SampleData.releases().map { it.showTitle } + anticipatedTitles).distinct()
-        demoTitles.map { title ->
+        // POPULAR rows now arrive from the schedule feed with their artwork already attached, so
+        // these cost a download and nothing else. That matters at this list's new length: resolving
+        // forty posters by title would have meant forty `singlesearch` round trips before the first
+        // image was even requested.
+        anticipated.filter { it.posterUrl != null }.map { show ->
+            async { PosterStore.ensureCached(applicationContext, PosterStore.keyFor(show.title), show.posterUrl) }
+        }.awaitAll()
+
+        // Whatever is left has no known URL — the bundled seed data, and the bundled POPULAR list on
+        // a device that has never reached the network. Those still need a lookup by title.
+        val unresolved = (SampleData.releases().map { it.showTitle } +
+            anticipated.filter { it.posterUrl == null }.map { it.title }).distinct()
+        unresolved.map { title ->
             async {
                 val key = PosterStore.keyFor(title)
                 if (!PosterStore.has(applicationContext, key)) {
@@ -169,8 +180,12 @@ class AnticipatedSyncWorker(
         private const val WORK_NAME = "anticipated-sync"
         private const val WORK_NAME_ONE_OFF = "anticipated-sync-once"
 
-        /** Swap this for a TMDB/Trakt-backed implementation once the app's API client exists. */
-        var source: AnticipatedSource = BundledAnticipatedSource
+        /**
+         * Where POPULAR's rows come from. Live by default; `doWork` falls back to
+         * [BundledAnticipatedSource] when a fetch fails, so a device that has never reached the
+         * network still shows something rather than an empty tab.
+         */
+        var source: AnticipatedSource = TvMazeAnticipatedSource
 
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<AnticipatedSyncWorker>(1, TimeUnit.DAYS)

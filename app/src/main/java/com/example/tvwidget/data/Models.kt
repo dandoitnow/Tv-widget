@@ -89,6 +89,12 @@ data class AnticipatedShow(
     val premiereDate: String,
     val daysAway: Int,
     val hypePercent: Int,
+    /**
+     * Poster art, when the feed supplied it. The schedule response these are built from already
+     * carries the show's image, so taking it here saves a `singlesearch` request per title — which
+     * at this list's length was most of the sync's traffic.
+     */
+    val posterUrl: String? = null,
 ) {
     /** `TODAY` on the day itself, otherwise `IN 7D`. */
     val awayLabel: String get() = if (daysAway <= 0) "TODAY" else "IN ${daysAway}D"
