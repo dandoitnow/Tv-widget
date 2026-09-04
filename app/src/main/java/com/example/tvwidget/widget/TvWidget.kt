@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
 import androidx.glance.appwidget.AndroidRemoteViews
@@ -17,6 +18,7 @@ import androidx.glance.appwidget.appWidgetBackground
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.currentState
+import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.ContentScale
@@ -136,6 +138,8 @@ private fun WidgetContent() {
         ) {
             Header(selected = tab, todayCount = todayCount)
 
+            if (Dimens.showWeekStrip()) WeekStrip(allToday)
+
             Row(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
                 if (Dimens.showSpine()) {
                     Spine()
@@ -154,12 +158,19 @@ private fun WidgetContent() {
                             hidden = hidden,
                         )
 
-                        Tab.ANTICIPATED -> AnticipatedList(
-                            shows = anticipated,
-                            posters = posters,
-                            accents = accents,
-                            hidden = hidden,
-                        )
+                        Tab.ANTICIPATED -> if (anticipated.isEmpty()) {
+                            EmptyState(
+                                headline = "No premieres found",
+                                detail = "This fills itself from the schedule once the app can reach the network.",
+                            )
+                        } else {
+                            AnticipatedList(
+                                shows = anticipated,
+                                posters = posters,
+                                accents = accents,
+                                hidden = hidden,
+                            )
+                        }
                     }
                 }
             }
@@ -168,6 +179,36 @@ private fun WidgetContent() {
                 ComingUpStrip(releases = todayReleases, posters = posters)
             }
         }
+    }
+}
+
+/**
+ * Seven dots for the next seven days, lit where something airs.
+ *
+ * The list answers "what is next"; this answers "how is my week shaped", which is a different
+ * question and one no amount of scrolling a list resolves. Borrowed wholesale from the logic behind
+ * Apple's activity rings: a small, dense, non-numeric summary that is read in one glance and never
+ * actually studied.
+ */
+@Composable
+private fun WeekStrip(releases: List<Release>) {
+    val days = BooleanArray(7)
+    releases.forEach { release ->
+        if (release.dayOffset in 0..6) days[release.dayOffset] = true
+    }
+    Box(
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .height(Dimens.WeekStripHeight)
+            .padding(bottom = 3.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Image(
+            provider = ImageProvider(Surfaces.weekStrip(days, today = 0)),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = GlanceModifier.fillMaxSize(),
+        )
     }
 }
 
@@ -203,7 +244,7 @@ private fun ComingUpStrip(releases: List<Release>, posters: Map<String, android.
         items = upcoming.map { release ->
             LiveViews.Upcoming(
                 title = release.showTitle,
-                meta = listOf(release.countdownLabel, release.dayLabel, release.network)
+                meta = listOf(release.countdownLabel(), release.dayLabel, release.network)
                     .filter { it.isNotBlank() }
                     .joinToString(" · "),
                 poster = posters[PosterStore.keyFor(release.showTitle)],

@@ -1,16 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The selected tab pill. Deliberately *not* a solid gold fill: one of three pills is selected at all
-  times, so a bright bar would sit across the top of the widget permanently and read loud rather
-  than expensive. This is a gold-tinted ember instead — the selection is felt as warmth, and the
-  label itself (drawn in full accent) carries the actual signal. The two-stop gradient keeps the
-  gold from looking like flat paint.
+  The selected tab pill wrapped in a ripple.
+
+  Nothing should be tappable and silent. RemoteViews will not let Glance attach a ripple to a
+  generated bitmap background, but a drawable *resource* can be a <ripple> with the shape inside it,
+  and the host honours it like any other background - so the pills answer a finger where they used
+  to absorb it. The mask keeps the ripple inside the capsule instead of flooding the whole row.
 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <gradient
-        android:angle="270"
-        android:startColor="#4A3A1C"
-        android:endColor="#2E2413"
-        android:type="linear" />
-    <corners android:radius="999dp" />
-</shape>
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#3DD8B45F">
+    <item android:id="@android:id/mask" android:drawable="@drawable/shape_pill_selected" />
+    <item android:drawable="@drawable/shape_pill_selected" />
+</ripple>

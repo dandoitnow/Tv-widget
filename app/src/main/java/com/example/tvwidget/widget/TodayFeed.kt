@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceModifier
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.actionStartActivity
@@ -15,6 +17,7 @@ import androidx.glance.appwidget.lazy.items
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
+import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxWidth
@@ -28,6 +31,7 @@ import com.example.tvwidget.data.FavoriteEpisode
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.Release
 import com.example.tvwidget.ui.Dimens
+import com.example.tvwidget.ui.Surfaces
 import com.example.tvwidget.ui.Tokens
 
 /**
@@ -50,7 +54,13 @@ fun TodayFeed(
     accents: Map<String, Int>,
     hidden: Int = 0,
 ) {
-    if (releases.isEmpty()) return
+    if (releases.isEmpty()) {
+        EmptyState(
+            headline = "Nothing airing",
+            detail = "Track a few shows and their episodes will land here.",
+        )
+        return
+    }
 
     val hero = releases.first()
     HeroRow(
@@ -58,12 +68,22 @@ fun TodayFeed(
         favorited = favorites.any { it.showTitle == hero.showTitle && it.episodeCode == hero.episodeCode },
         posters = posters,
         accents = accents,
+        // The next two releases fan out behind the hero's poster, so the row shows that there is a
+        // queue rather than only what is at the front of it.
+        behind = releases.drop(1).take(2)
+            .mapNotNull { posters[PosterStore.keyFor(it.showTitle)] },
     )
 
     val rest = releases.drop(1)
     LazyColumn(modifier = GlanceModifier.fillMaxWidth()) {
         items(rest.size) { index ->
             val release = rest[index]
+            // A section label wherever the horizon changes. Grouping is the oldest move in list
+            // design and it costs one line of type: without it a run of cards is undifferentiated,
+            // and the reader has to parse every date to work out where "this week" ends.
+            val band = bandOf(release)
+            val previousBand = if (index == 0) bandOf(hero) else bandOf(rest[index - 1])
+            if (band != previousBand) SectionLabel(band)
             ReleaseRow(
                 release = release,
                 // +1 because the hero already occupies depth 0 — the fade has to continue from
@@ -84,6 +104,25 @@ fun TodayFeed(
     }
 }
 
+/** Which horizon a release belongs to. Three bands is enough; more would be a calendar. */
+private fun bandOf(release: Release): String = when {
+    release.dayOffset <= 0 -> "TONIGHT"
+    release.dayOffset < 7 -> "THIS WEEK"
+    else -> "LATER"
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        style = Tokens.label(Dimens.smallLabelSize() + 1f, Tokens.TextTertiary),
+        maxLines = 1,
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, top = 6.dp, bottom = 5.dp),
+    )
+}
+
 /**
  * The next release, given its own scale and a live countdown.
  *
@@ -98,6 +137,7 @@ private fun HeroRow(
     favorited: Boolean,
     posters: Map<String, Bitmap>,
     accents: Map<String, Int>,
+    behind: List<Bitmap>,
 ) {
     val context = LocalContext.current
     val rowHeight = Dimens.heroRowHeight()
@@ -106,6 +146,7 @@ private fun HeroRow(
         today = release.isToday,
         depth = 0,
         edgeAccent = accents[PosterStore.keyFor(release.showTitle)],
+        hero = true,
     ) {
         Row(
             modifier = GlanceModifier
@@ -119,11 +160,12 @@ private fun HeroRow(
                 posters = posters,
                 width = Dimens.heroPosterWidth(),
                 height = Dimens.heroPosterHeight(),
+                behind = behind,
             )
             Spacer(GlanceModifier.width(12.dp))
             Column(modifier = GlanceModifier.defaultWeight()) {
                 Text(
-                    text = "${release.dayLabel} · ${release.status.label}",
+                    text = "${release.humanDay} · ${release.status.label}",
                     style = Tokens.label(Dimens.metaSize(), Tokens.Accent),
                     maxLines = 1,
                 )
@@ -209,7 +251,9 @@ private fun ReleaseRow(
             Spacer(GlanceModifier.width(10.dp))
             Column(modifier = GlanceModifier.defaultWeight()) {
                 Text(
-                    text = "${release.dayLabel} · ${release.airTime} · ${release.network}",
+                    text = listOf(release.humanDay, release.airTime, release.network)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" · "),
                     style = Tokens.label(Dimens.metaSize(), metaColor),
                     maxLines = 1,
                 )
@@ -239,7 +283,7 @@ private fun ReleaseRow(
                     // A future episode leads with its countdown instead of its episode number —
                     // days-away is the more useful glance value while it's still ahead; today's and
                     // aired rows keep the code.
-                    text = if (release.dayOffset > 0) release.countdownLabel else release.episodeCode,
+                    text = if (release.dayOffset > 0) release.countdownLabel() else release.episodeCode,
                     style = Tokens.numeric(
                         Dimens.accentLabelSize(),
                         Tokens.dim(Tokens.TextPrimary, dimmed),
@@ -252,6 +296,19 @@ private fun ReleaseRow(
                     style = Tokens.label(Dimens.statusSize(), statusColor, TextAlign.End),
                     maxLines = 1,
                 )
+                // Where the episode sits in its season. A tracker that only ever says "next" leaves
+                // out the thing people actually feel about a season — how much of it is left.
+                release.seasonProgress?.let { progress ->
+                    Spacer(GlanceModifier.height(4.dp))
+                    Image(
+                        provider = ImageProvider(Surfaces.seasonBar(progress)),
+                        contentDescription = release.seasonProgressLabel,
+                        contentScale = ContentScale.FillBounds,
+                        modifier = GlanceModifier
+                            .width(Dimens.SeasonBarWidth)
+                            .height(Dimens.SeasonBarHeight),
+                    )
+                }
             }
             StarToggle(
                 favorited = favorited,

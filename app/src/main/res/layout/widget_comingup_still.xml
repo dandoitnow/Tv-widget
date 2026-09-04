@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The no-motion variant of the COMING UP ticker, used when the system animation scale is zero.
+
+  Someone who has turned animations off across their device has said something clear, and a strip
+  that keeps cross-fading anyway is overriding them. Same layout and same ids, no autoStart and no
+  transitions - the flipper shows its first child and stays there.
+-->
+<ViewFlipper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@id/comingup_flipper"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:autoStart="false"
+    android:flipInterval="5000"
+    android:measureAllChildren="true" />

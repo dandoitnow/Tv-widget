@@ -64,6 +64,27 @@ object Dimens {
     }
 
     /**
+     * Render height for the drawn tab labels. They are bitmaps rather than text (see `Header`), so
+     * they need an explicit box; a hair over the type size leaves room for descenders without
+     * letting the image scale the glyphs up.
+     */
+    @Composable
+    fun tabLabelHeight(): Dp = when (tier()) {
+        Tier.COMPACT -> 14.dp
+        Tier.ROOMY -> 19.dp
+    }
+
+    /** The seven-day rhythm strip under the header. Roomy sizes only — it needs the vertical room. */
+    @Composable
+    fun showWeekStrip(): Boolean = tier() == Tier.ROOMY
+
+    val WeekStripHeight: Dp = 10.dp
+
+    /** The season-progress bar in a row's numeric column. */
+    val SeasonBarWidth: Dp = 34.dp
+    val SeasonBarHeight: Dp = 3.dp
+
+    /**
      * A row's show title. Deliberately fixed, not tier-scaled: it's a `maxLines = 1` field next to a
      * poster and a status column that don't shrink to make room, so letting it grow with the widget
      * pushed titles past what the row could fit.
@@ -222,11 +243,14 @@ object Dimens {
      * The full list is still fetched and still lives in the Catalogue screen, which is an ordinary
      * Activity and has no such ceiling.
      */
-    const val MaxWidgetRows = 30
+    const val MaxWidgetRows = 20
 
     /**
-     * Target poster width in pixels for widget rows. Rows draw posters between 28dp and 78dp wide,
-     * so this is a touch soft only at the largest tier — a fair trade for a list that renders at all.
+     * Target poster width in pixels for widget rows.
+     *
+     * Small on purpose, and smaller than it was: posters now carry an alpha channel for their
+     * squircle corners, which doubles their bytes per pixel, and every one of them is parcelled once
+     * per row. Trading a little sharpness for a shape that reads correctly is the right way round.
      */
-    const val WidgetPosterWidthPx = 72
+    const val WidgetPosterWidthPx = 64
 }

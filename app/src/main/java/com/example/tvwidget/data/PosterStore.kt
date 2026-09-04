@@ -49,7 +49,7 @@ object PosterStore {
      * downloads, so a change to the finishing has to invalidate everything already on disk;
      * otherwise old and new posters sit in the same list looking visibly different from each other.
      */
-    private const val CACHE_VERSION = 3
+    private const val CACHE_VERSION = 4
 
     /**
      * The corner radius the stroke follows, in bitmap pixels. [Tokens.RadiusPoster] is 8dp, and a
@@ -64,7 +64,7 @@ object PosterStore {
      * is a touch soft only at the largest size tier — a fair trade for a redraw that keeps up with
      * the tap that caused it. See [loadVariant].
      */
-    private const val VARIANT_WIDTH = 72
+    private const val VARIANT_WIDTH = 64
 
     private data class CacheEntry(val fileModifiedAt: Long, val bitmap: Bitmap, val accent: Int)
 
@@ -242,8 +242,10 @@ object PosterStore {
         if (!file.exists()) return loadOne(context, key)?.let { scaledFor(key, it) }
         val cacheKey = "$key@variant"
         synchronized(scaledCache) { scaledCache[cacheKey]?.let { return it } }
-        val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }
-        val bitmap = runCatching { BitmapFactory.decodeFile(file.absolutePath, options) }.getOrNull()
+        // ARGB, not RGB_565. Posters now carry squircle corners cut out of them, and 565 has no
+        // alpha channel — decoding into it would fill those corners with black instead of letting
+        // the row surface show through, which is the entire point of the shape.
+        val bitmap = runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
             ?: return null
         synchronized(scaledCache) { scaledCache[cacheKey] = bitmap }
         return bitmap

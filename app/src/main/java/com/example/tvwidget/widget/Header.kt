@@ -3,6 +3,8 @@ package com.example.tvwidget.widget
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceModifier
+import androidx.compose.ui.graphics.toArgb
+import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.action.Action
 import androidx.glance.action.actionParametersOf
@@ -11,6 +13,7 @@ import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.background
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxWidth
@@ -18,11 +21,11 @@ import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
-import androidx.glance.text.Text
 import com.example.tvwidget.MainActivity
 import com.example.tvwidget.R
 import com.example.tvwidget.data.Tab
 import com.example.tvwidget.ui.Dimens
+import com.example.tvwidget.ui.Surfaces
 import com.example.tvwidget.ui.Tokens
 
 /**
@@ -99,12 +102,24 @@ private fun Pill(
             leading()
             Spacer(GlanceModifier.width(5.dp))
         }
-        Text(
-            text = label,
-            style = Tokens.label(
-                Dimens.tabLabelSize(),
-                if (selected) Tokens.Accent else Tokens.TextMuted,
+        // Drawn, not typeset. RemoteViews exposes no letter-spacing and no gradient fill, and both
+        // are exactly what a small-caps label needs to look struck rather than typed — so the label
+        // is rendered to a bitmap with real tracking and, when selected, a vertical gold ramp.
+        // Confined to the header on purpose: baked text cannot follow the system font scale, which
+        // is a fair trade for three fixed words of chrome and a bad one for anything else.
+        Image(
+            provider = ImageProvider(
+                Surfaces.label(
+                    text = label,
+                    sizeSp = Dimens.tabLabelSize(),
+                    tracking = 0.14f,
+                    gold = selected,
+                    flatColor = if (selected) Tokens.Accent.toArgb() else Tokens.TextMuted.toArgb(),
+                )
             ),
+            contentDescription = label,
+            contentScale = ContentScale.Fit,
+            modifier = GlanceModifier.height(Dimens.tabLabelHeight()),
         )
     }
 }

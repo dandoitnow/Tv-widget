@@ -56,8 +56,20 @@ object TvMazeApi {
      */
     private const val POPULAR_TTL_MS = 6 * 60 * 60_000L
 
-    data class EpisodeInfo(val airDate: LocalDate, val airTime: String, val code: String)
-    data class ShowSchedule(val previous: EpisodeInfo?, val next: EpisodeInfo?, val imdbId: String? = null)
+    data class EpisodeInfo(
+        val airDate: LocalDate,
+        val airTime: String,
+        val code: String,
+        val season: Int = 0,
+        val number: Int = 0,
+    )
+    data class ShowSchedule(
+        val previous: EpisodeInfo?,
+        val next: EpisodeInfo?,
+        val imdbId: String? = null,
+        /** Episodes per season number, for the season-progress bar. */
+        val seasonLengths: Map<Int, Int> = emptyMap(),
+    )
 
     private val scheduleCache = ConcurrentHashMap<Int, Pair<Long, ShowSchedule>>()
 
@@ -292,7 +304,9 @@ object TvMazeApi {
         // A failed fetch (null body) deliberately isn't cached — only a real answer is worth
         // remembering; caching "no data" would mask a network blip as "this show has no episodes"
         // for the next 15 minutes.
-        val body = get("$BASE/shows/$tvMazeId?embed[]=previousepisode&embed[]=nextepisode")
+        // `seasons` rides along on this same response: one more embed, no extra request, and it is
+        // the only place TVMaze reports how many episodes a season actually holds.
+        val body = get("$BASE/shows/$tvMazeId?embed[]=previousepisode&embed[]=nextepisode&embed[]=seasons")
             ?: return@withContext ShowSchedule(null, null)
         // The show's own IMDb id (externals.imdb) rides along on this same response for free — no
         // extra request needed to give a tracked show's TODAY rows a direct IMDb link.
@@ -302,7 +316,20 @@ object TvMazeApi {
             previous = embedded?.optJSONObject("previousepisode")?.let(::toEpisodeInfo),
             next = embedded?.optJSONObject("nextepisode")?.let(::toEpisodeInfo),
             imdbId = imdbIdFrom(json),
+            seasonLengths = seasonLengthsFrom(embedded),
         ).also { scheduleCache[tvMazeId] = System.currentTimeMillis() to it }
+    }
+
+    /** Season number to episode count. `episodeOrder` is null for a season still being ordered. */
+    private fun seasonLengthsFrom(embedded: JSONObject?): Map<Int, Int> {
+        val seasons = embedded?.optJSONArray("seasons") ?: return emptyMap()
+        val out = HashMap<Int, Int>()
+        for (i in 0 until seasons.length()) {
+            val season = seasons.optJSONObject(i) ?: continue
+            val order = season.optInt("episodeOrder", 0)
+            if (order > 0) out[season.optInt("number")] = order
+        }
+        return out
     }
 
     private fun imdbIdFrom(json: JSONObject): String? =
@@ -330,6 +357,8 @@ object TvMazeApi {
         val season = json.optInt("season")
         val number = json.optInt("number")
         return EpisodeInfo(
+            season = season,
+            number = number,
             airDate = dateTime.toLocalDate(),
             airTime = dateTime.format(DateTimeFormatter.ofPattern("HH:mm")),
             code = "S%02dE%02d".format(season, number),
