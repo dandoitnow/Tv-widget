@@ -28,6 +28,8 @@ import com.example.tvwidget.data.TvMazeApi
 import com.example.tvwidget.data.WidgetState
 import com.example.tvwidget.widget.TvWidget
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -72,6 +74,15 @@ class AnticipatedSyncWorker(
             }
         }
         TvWidget().updateAll(applicationContext)
+
+        // Book a redraw for when the next release actually airs, so the live countdown is not left
+        // ticking past zero into negative time. See WidgetRefreshWorker.
+        WidgetRefreshWorker.scheduleAt(
+            applicationContext,
+            trackedReleases.mapNotNull { it.airEpochMillis }
+                .filter { it > now }
+                .minOrNull(),
+        )
         return Result.success()
     }
 
@@ -108,10 +119,24 @@ class AnticipatedSyncWorker(
                         else -> ReleaseStatus.SCHEDULED
                     },
                     imdbId = imdbId,
+                    airEpochMillis = airInstantOf(episode),
                 )
             }
         }.sortedWith(compareBy({ it.dayOffset }, { it.airTime }))
     }
+
+    /**
+     * The episode's air time as an absolute instant, for the widget's live countdown.
+     *
+     * TVMaze leaves `airTime` empty for plenty of streaming releases, which is a real answer rather
+     * than missing data — a show that "drops Thursday" has no broadcast slot. Those default to 20:00
+     * local, since a countdown to an approximate evening hour is far more useful than no countdown,
+     * and the widget stops showing it 24 hours out anyway.
+     */
+    private fun airInstantOf(episode: TvMazeApi.EpisodeInfo): Long? = runCatching {
+        val time = if (episode.airTime.isBlank()) LocalTime.of(20, 0) else LocalTime.parse(episode.airTime)
+        episode.airDate.atTime(time).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    }.getOrNull()
 
     /**
      * Tracked shows are cached first and in parallel, ahead of the (more numerous, one-request-each)

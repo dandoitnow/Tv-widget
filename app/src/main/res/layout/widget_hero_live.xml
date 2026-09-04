@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The hero row's right-hand column, when the next release is close enough for a live countdown.
+
+  Two things here are doing work RemoteViews is not usually credited with being able to do:
+
+  * Chronometer ticks itself. It runs in the launcher's process off its own handler, so a
+    second-by-second countdown on the home screen costs this app nothing at all - no alarms, no
+    periodic updates, no wakeups. Driving the same effect by pushing widget updates would be a
+    battery catastrophe for a result that looked worse.
+  * ViewFlipper animates itself, for the same reason. autoStart plus a flip interval declared in XML
+    means the framework runs the cross-fade; there is no remotable setter involved and nothing for
+    the app to keep alive.
+
+  measureAllChildren keeps the flipper sized to its largest child, so the row does not twitch
+  wider and narrower each time it turns over.
+-->
+<ViewFlipper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@id/hero_flipper"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:autoStart="true"
+    android:flipInterval="6000"
+    android:measureAllChildren="true"
+    android:inAnimation="@android:anim/fade_in"
+    android:outAnimation="@android:anim/fade_out">
+
+    <Chronometer
+        android:id="@id/hero_primary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:gravity="end"
+        android:maxLines="1"
+        android:fontFamily="monospace"
+        android:includeFontPadding="false"
+        android:textColor="#F3EDE3"
+        android:textSize="17sp" />
+
+    <TextView
+        android:id="@id/hero_secondary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:gravity="end"
+        android:maxLines="1"
+        android:fontFamily="sans-serif-medium"
+        android:includeFontPadding="false"
+        android:textColor="#D8B45F"
+        android:textSize="13sp" />
+</ViewFlipper>

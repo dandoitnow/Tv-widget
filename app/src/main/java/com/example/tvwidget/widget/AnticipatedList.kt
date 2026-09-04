@@ -22,6 +22,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import com.example.tvwidget.MainActivity
 import com.example.tvwidget.data.AnticipatedShow
+import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.ui.Dimens
 import com.example.tvwidget.ui.Tokens
 
@@ -30,16 +31,34 @@ import com.example.tvwidget.ui.Tokens
  * as TODAY so the two tabs read as one system.
  */
 @Composable
-fun AnticipatedList(shows: List<AnticipatedShow>, posters: Map<String, Bitmap>) {
+fun AnticipatedList(
+    shows: List<AnticipatedShow>,
+    posters: Map<String, Bitmap>,
+    accents: Map<String, Int>,
+) {
     LazyColumn(modifier = GlanceModifier.fillMaxWidth()) {
-        items(shows.size) { index -> AnticipatedRow(rank = index + 1, show = shows[index], posters = posters) }
+        items(shows.size) { index ->
+            AnticipatedRow(
+                rank = index + 1,
+                depth = index,
+                show = shows[index],
+                posters = posters,
+                accents = accents,
+            )
+        }
         item { Spacer(GlanceModifier.fillMaxWidth().height(Dimens.listRowHeight())) }
     }
 }
 
 @Composable
-private fun AnticipatedRow(rank: Int, show: AnticipatedShow, posters: Map<String, Bitmap>) {
-    RowSurface {
+private fun AnticipatedRow(
+    rank: Int,
+    depth: Int,
+    show: AnticipatedShow,
+    posters: Map<String, Bitmap>,
+    accents: Map<String, Int>,
+) {
+    RowSurface(depth = depth, edgeAccent = accents[PosterStore.keyFor(show.title)]) {
         Row(
             modifier = GlanceModifier
                 .fillMaxWidth()

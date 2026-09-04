@@ -126,4 +126,81 @@ object Dimens {
         Tier.ROOMY -> 8.dp
         Tier.XL -> 10.dp
     }
+
+    // -- The hero row --------------------------------------------------------------------------
+    // The next release is not just the first item in a list, so it is not sized like one. Giving it
+    // its own scale is what turns a uniform list into a composition with a subject — and a uniform
+    // list is the thing that always ends up reading as a table no matter how it is styled.
+
+    @Composable
+    fun heroRowHeight(): Dp = when (tier()) {
+        Tier.COMPACT -> 62.dp
+        Tier.ROOMY -> 100.dp
+        Tier.XL -> 124.dp
+    }
+
+    @Composable
+    fun heroPosterWidth(): Dp = when (tier()) {
+        Tier.COMPACT -> 38.dp
+        Tier.ROOMY -> 62.dp
+        Tier.XL -> 78.dp
+    }
+
+    @Composable
+    fun heroPosterHeight(): Dp = when (tier()) {
+        Tier.COMPACT -> 53.dp
+        Tier.ROOMY -> 86.dp
+        Tier.XL -> 108.dp
+    }
+
+    /** The live countdown itself — the largest thing in the row after the title. */
+    @Composable
+    fun heroCountdownSize(): Float = when (tier()) {
+        Tier.COMPACT -> 15f
+        Tier.ROOMY -> 20f
+        Tier.XL -> 25f
+    }
+
+    /** The line the countdown cross-fades with: air time and network. */
+    @Composable
+    fun heroSecondarySize(): Float = when (tier()) {
+        Tier.COMPACT -> 10f
+        Tier.ROOMY -> 13f
+        Tier.XL -> 16f
+    }
+
+    /**
+     * The hero's title. Fixed for the same reason [TitleSize] is — it shares a row with a poster and
+     * a countdown column that do not shrink to make room — but a little larger, because being
+     * larger is most of how the hero says it is the hero.
+     */
+    const val HeroTitleSize = 22f
+
+    // -- The spine -----------------------------------------------------------------------------
+
+    /**
+     * Whether the left gutter gets its hairline of light. Skipped when compact: the spine plus its
+     * gutter costs about 10dp of width, and at the smallest size that is width the titles need more
+     * than the decoration does.
+     */
+    @Composable
+    fun showSpine(): Boolean = tier() != Tier.COMPACT
+
+    val SpineWidth: Dp = 2.dp
+
+    /** Air between the spine and the cards. The spine is architecture; it should not touch content. */
+    val SpineGutter: Dp = 9.dp
+
+    // -- The COMING UP ticker ------------------------------------------------------------------
+
+    /**
+     * Only the largest tier gets the ticker. Below that, every dp belongs to the list — a strip that
+     * cost a whole visible row would be trading information for decoration, which is the wrong trade
+     * even when the decoration moves.
+     */
+    @Composable
+    fun showTicker(): Boolean = tier() == Tier.XL
+
+    /** How many rows the list shows before the rest are handed to the ticker. */
+    const val TickerStartsAfter = 4
 }

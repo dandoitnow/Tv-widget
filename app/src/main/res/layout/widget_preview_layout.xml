@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the widget picker shows on Android 12+.
+
+  previewLayout is a real inflated layout rather than a hand-drawn image, which is the whole point:
+  the vector thumbnail it replaces had drifted a full redesign out of date (it still showed a 2x2 tab
+  grid that had not existed for weeks) because nothing forces a picture to keep up with the code.
+  This is built from the same drawables and the same palette as the widget, so it goes stale far more
+  slowly - and when it does, it is one file to fix rather than thirty-odd hand-placed vector paths.
+
+  previewImage stays declared alongside it for Android 11 and below, which has no previewLayout.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/surface_widget"
+    android:padding="12dp">
+
+    <!-- Tabs -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="30dp"
+            android:layout_weight="1"
+            android:background="@drawable/surface_pill_selected"
+            android:gravity="center"
+            android:fontFamily="sans-serif-medium"
+            android:text="@string/preview_tab_today"
+            android:textColor="#D8B45F"
+            android:textSize="11sp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="30dp"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/surface_pill"
+            android:gravity="center"
+            android:fontFamily="sans-serif-medium"
+            android:text="@string/preview_tab_popular"
+            android:textColor="#8AEDE6DA"
+            android:textSize="11sp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="30dp"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/surface_pill"
+            android:gravity="center"
+            android:fontFamily="sans-serif-medium"
+            android:text="@string/preview_tab_catalogue"
+            android:textColor="#8AEDE6DA"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- The gutter spine, and the content beside it -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <View
+            android:layout_width="2dp"
+            android:layout_height="match_parent"
+            android:background="#26D8B45F" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="9dp"
+            android:orientation="vertical">
+
+            <!-- Hero -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/surface_row_today"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="10dp">
+
+                <ImageView
+                    android:layout_width="38dp"
+                    android:layout_height="53dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/poster_placeholder" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="11dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="@string/preview_hero_meta"
+                        android:textColor="#D8B45F"
+                        android:textSize="9sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="serif"
+                        android:text="@string/preview_hero_title"
+                        android:textColor="#F3EDE3"
+                        android:textSize="20sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:text="@string/preview_hero_countdown"
+                    android:textColor="#F3EDE3"
+                    android:textSize="15sp" />
+            </LinearLayout>
+
+            <!-- A following row, faded the way depth fades it -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:alpha="0.86"
+                android:background="@drawable/surface_row"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="10dp">
+
+                <ImageView
+                    android:layout_width="28dp"
+                    android:layout_height="39dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/poster_placeholder" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="@string/preview_row_meta"
+                        android:textColor="#85EDE6DA"
+                        android:textSize="9sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="serif"
+                        android:text="@string/preview_row_title"
+                        android:textColor="#F3EDE3"
+                        android:textSize="17sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:text="@string/preview_row_countdown"
+                    android:textColor="#F3EDE3"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>
