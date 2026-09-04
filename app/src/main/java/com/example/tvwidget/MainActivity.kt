@@ -22,6 +22,10 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.example.tvwidget.data.CatalogShow
 import com.example.tvwidget.data.PosterStore
 import com.example.tvwidget.data.Recommender
@@ -96,6 +100,15 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Draw behind the system bars. Targeting API 35 makes this the platform's behaviour whether
+        // the app asks for it or not, so it is declared explicitly — that way the layout is the same
+        // on every release the app runs on, rather than quietly changing at the version boundary.
+        //
+        // It also happens to be the look this design wants: the warm gradient ground running the
+        // full height of the display, with the status bar sitting on it rather than above a seam.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
 
         val show = intent?.getStringExtra(EXTRA_SHOW_TITLE)
         val episode = intent?.getStringExtra(EXTRA_EPISODE_CODE)
@@ -244,6 +257,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(0, 8.dp, 0, 0)
         })
+        applyWindowInsets(root)
         return root
     }
 
@@ -267,6 +281,7 @@ class MainActivity : Activity() {
         }.apply {
             (layoutParams as? LinearLayout.LayoutParams)?.topMargin = 32.dp
         })
+        applyWindowInsets(root)
         return root
     }
 
@@ -523,6 +538,9 @@ class MainActivity : Activity() {
             }
         })
 
+        // The list keeps the navigation-bar inset for itself, so rows scroll under the bar instead
+        // of stopping above it; everything else on the screen is inset by the root.
+        applyWindowInsets(root, catalogList)
         return root
     }
 
@@ -723,7 +741,9 @@ class MainActivity : Activity() {
                 // list of shows most often leaves unanswered.
                 text = reasons[show.tvMazeId] ?: metaLine(show)
                 tag = show.tvMazeId
-                label(9.5f, AppTheme.TextMuted, tracking = 0.2f)
+                // Less tracking than the other small caps on this screen. Tracking buys legibility
+                // at small sizes and costs width, and this is the one line that has too little.
+                label(9.5f, AppTheme.TextMuted, tracking = 0.1f)
                 maxLines = 1
                 // Ellipsize rather than hard-clip. maxLines alone cuts at the column edge with no
                 // mark, so an overrun looks like the text simply ends — which is exactly how a
@@ -794,10 +814,18 @@ class MainActivity : Activity() {
             return wrapper
         }
 
-        /** `S03E10 · RUNNING · APPLE TV+`, skipping whatever this show has no value for. */
+        /**
+         * `S03E10 · APPLE TV+`, or `S03E06 · ENDED · BBC ONE` when the status is worth the width.
+         *
+         * Three fields do not fit this column, and the one that loses is always the last — so with
+         * status always present, the network was ellipsized off every single row. Status only earns
+         * its place when it says something: ENDED and IN DEVELOPMENT change what a row means,
+         * RUNNING is the default state of most television and says nothing, and TRACKING is already
+         * spelled out on the button at the other end of the same row.
+         */
         private fun metaLine(show: CatalogShow): String = listOf(
             show.latestEpisode.orEmpty(),
-            show.status,
+            show.status.takeIf { it !in UNREMARKABLE_STATUSES }.orEmpty(),
             show.network,
         ).filter { it.isNotBlank() && it != "UNKNOWN" }.joinToString(" · ")
 
@@ -883,6 +911,58 @@ class MainActivity : Activity() {
         layoutParams = ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         )
+    }
+
+    /**
+     * Keeps content clear of the system bars and the keyboard, now that the window no longer does it.
+     *
+     * Drawing edge to edge means the window stops insetting anything, and that includes the IME:
+     * `adjustResize` is not applied to a window that does not fit system windows, so a screen that
+     * used to shrink for the keyboard simply gets covered by it instead. On a screen whose whole
+     * purpose is typing a search and reading the results, that is the difference between working and
+     * not — so the bottom inset is the larger of the navigation bar and the keyboard.
+     *
+     * The base padding is captured once rather than read back each pass, because reading the view's
+     * current padding and adding to it accumulates: every inset change would add the bars again on
+     * top of the last result until the content was squeezed out of its own screen.
+     *
+     * [scrollingChild], when given, keeps the navigation-bar inset for itself instead, so its rows
+     * scroll under the bar rather than stopping short of it — the reason to draw edge to edge at all.
+     *
+     * Called exactly once per screen, by the screen itself rather than by `screenRoot`. Applying it
+     * twice to the same view would capture already-inset padding as the new baseline, which is the
+     * accumulation this guards against.
+     */
+    private fun applyWindowInsets(root: View, scrollingChild: View? = null) {
+        val baseLeft = root.paddingLeft
+        val baseTop = root.paddingTop
+        val baseRight = root.paddingRight
+        val baseBottom = root.paddingBottom
+        val childBase = scrollingChild?.paddingBottom ?: 0
+
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(
+                baseLeft + bars.left,
+                baseTop + bars.top,
+                baseRight + bars.right,
+                // The keyboard supersedes the navigation bar rather than stacking with it: when the
+                // IME is up it is drawn over that space, so adding both would leave a bar-sized band
+                // of dead screen above the keyboard.
+                baseBottom + if (scrollingChild != null) ime.bottom else maxOf(bars.bottom, ime.bottom),
+            )
+            scrollingChild?.setPadding(
+                scrollingChild.paddingLeft,
+                scrollingChild.paddingTop,
+                scrollingChild.paddingRight,
+                childBase + bars.bottom,
+            )
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
     }
 
     /**
@@ -1092,6 +1172,9 @@ class MainActivity : Activity() {
         const val EXTRA_EPISODE_CODE = "episode_code"
         const val EXTRA_IMDB_ID = "imdb_id"
         const val EXTRA_OPEN_CATALOG = "open_catalog"
-        private const val SEARCH_DEBOUNCE_MS = 300L
+        /** Statuses that tell the reader nothing they cannot already see. See `metaLine`. */
+    private val UNREMARKABLE_STATUSES = setOf("RUNNING", "TRACKING", "TO BE DETERMINED")
+
+    private const val SEARCH_DEBOUNCE_MS = 300L
     }
 }
