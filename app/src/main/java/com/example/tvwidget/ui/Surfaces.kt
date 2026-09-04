@@ -103,27 +103,63 @@ object Surfaces {
      * or any other explicit marker to say so.
      *
      * Only the surface fades. Posters stay at full strength, because the artwork is the reward and
-     * dimming it would fight the per-row edge light drawn from that same artwork.
+     * dimming it would fight the edge light drawn from that same artwork.
+     *
+     * [accent] is that edge light: the dominant colour of the row's own poster, washed in from the
+     * leading edge, so every row is lit by its own artwork and a shelf of shows reads as a shelf of
+     * *different* shows rather than as repeated furniture.
+     *
+     * It is composited into this one bitmap rather than drawn as an overlay view, which was the
+     * first attempt and was a mistake twice over. A `fillMaxSize` child inside a wrap-content
+     * `FrameLayout` resolves against the parent's *available* height, which dragged the row's
+     * background out to fill the entire widget; and any view stacked above the row's content would
+     * have quietly eaten every tap in it. Baked in, the wash has no layout or touch consequences at
+     * all.
+     *
+     * The wash is kept low and gone by about a third of the way across, so it reads as light falling
+     * on a surface. The moment it reads as a coloured panel it stops looking like lighting and
+     * starts looking like a mistake.
      */
-    fun row(today: Boolean, depth: Int): Bitmap {
+    fun row(today: Boolean, depth: Int, accent: Int? = null): Bitmap {
         val fade = fadeAt(depth)
-        return cached("row:$today:${(fade * 100).toInt()}") {
+        return cached("row:$today:${(fade * 100).toInt()}:$accent") {
             val colors = if (today) {
                 intArrayOf(0xFF2A2115.toInt(), 0xFF201A14.toInt(), 0xFF171310.toInt())
             } else {
                 intArrayOf(0xFF221D18.toInt(), 0xFF1D1915.toInt(), 0xFF191512.toInt())
             }
-            val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            val w = 128f
+            val h = 64f
+            val bitmap = Bitmap.createBitmap(w.toInt(), h.toInt(), Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val base = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 // TODAY's row is lit from the leading edge (horizontal); the rest from above.
                 shader = if (today) {
-                    LinearGradient(0f, 0f, 64f, 0f, colors, null, Shader.TileMode.CLAMP)
+                    LinearGradient(0f, 0f, w, 0f, colors, null, Shader.TileMode.CLAMP)
                 } else {
-                    LinearGradient(0f, 0f, 0f, 64f, colors, null, Shader.TileMode.CLAMP)
+                    LinearGradient(0f, 0f, 0f, h, colors, null, Shader.TileMode.CLAMP)
                 }
                 alpha = (fade * 255).toInt()
             }
-            Canvas(bitmap).drawRect(0f, 0f, 64f, 64f, paint)
+            canvas.drawRect(0f, 0f, w, h, base)
+
+            if (accent != null) {
+                val lit = AndroidColor.argb(
+                    (72 * fade).toInt(),
+                    AndroidColor.red(accent),
+                    AndroidColor.green(accent),
+                    AndroidColor.blue(accent),
+                )
+                val wash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    shader = LinearGradient(
+                        0f, 0f, w, 0f,
+                        intArrayOf(lit, lit and 0x00FFFFFF),
+                        floatArrayOf(0f, 0.34f),
+                        Shader.TileMode.CLAMP,
+                    )
+                }
+                canvas.drawRect(0f, 0f, w, h, wash)
+            }
             bitmap
         }
     }
@@ -139,35 +175,6 @@ object Surfaces {
     }
 
     // -- Edge light ------------------------------------------------------------------------------
-
-    /**
-     * A wash of a poster's own dominant colour, bleeding in from the row's leading edge.
-     *
-     * This is the detail that makes the list look expensive: every row is lit by its own artwork, so
-     * a shelf of shows reads as a shelf of *different* shows rather than as repeated furniture. It
-     * costs one colour extraction per poster, done once when the poster is decoded (see
-     * [com.example.tvwidget.data.PosterStore]) and memoized alongside the bitmap.
-     *
-     * Kept low — about a third alpha at its strongest, gone by 60% across — so it reads as light on
-     * a surface rather than as a coloured panel. The moment it reads as a panel it stops looking
-     * like lighting and starts looking like a mistake.
-     */
-    fun edgeLight(accent: Int): Bitmap = cached("edge:$accent") {
-        val bitmap = Bitmap.createBitmap(96, 8, Bitmap.Config.ARGB_8888)
-        val lit = AndroidColor.argb(
-            88, AndroidColor.red(accent), AndroidColor.green(accent), AndroidColor.blue(accent),
-        )
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = LinearGradient(
-                0f, 0f, 96f, 0f,
-                intArrayOf(lit, lit and 0x00FFFFFF),
-                floatArrayOf(0f, 0.6f),
-                Shader.TileMode.CLAMP,
-            )
-        }
-        Canvas(bitmap).drawRect(0f, 0f, 96f, 8f, paint)
-        bitmap
-    }
 
     // -- The spine -------------------------------------------------------------------------------
 

@@ -13,6 +13,7 @@ import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
@@ -136,21 +137,23 @@ private fun HeroRow(
                         )
                     ),
                 )
-                Text(
-                    text = release.episodeCode,
-                    style = Tokens.numeric(Dimens.metaSize(), Tokens.TextTertiary),
-                    maxLines = 1,
-                )
             }
             Spacer(GlanceModifier.width(8.dp))
-            AndroidRemoteViews(
-                remoteViews = LiveViews.hero(
-                    context = context,
-                    release = release,
-                    primarySizeSp = Dimens.heroCountdownSize(),
-                    secondarySizeSp = Dimens.heroSecondarySize(),
-                ),
-            )
+            // Width-constrained: the embedded RemoteViews subtree doesn't take part in the row's
+            // weight distribution, so unbounded it claimed the row and squeezed the title out.
+            Box(
+                modifier = GlanceModifier.width(Dimens.heroCountdownWidth()),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                AndroidRemoteViews(
+                    remoteViews = LiveViews.hero(
+                        context = context,
+                        release = release,
+                        primarySizeSp = Dimens.heroCountdownSize(),
+                        secondarySizeSp = Dimens.heroSecondarySize(),
+                    ),
+                )
+            }
             StarToggle(
                 favorited = favorited,
                 targetHeight = rowHeight,
